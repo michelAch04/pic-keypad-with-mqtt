@@ -1,0 +1,141 @@
+Based on the project knowledge, here's the complete information about your ESP8266 and B4A implementation:
+1. Arduino IDE and ESP8266 Board Package Version
+
+Board: LOLIN(WEMOS) D1 R2 & mini (WeMos D1 Mini)
+Board Package URL: http://arduino.esp8266.com/stable/package_esp8266com_index.json
+Note: The documentation doesn't specify the exact version numbers, but instructs to add the ESP8266 board manager URL and install the latest available version
+
+2. B4A (Basic4Android) Version
+
+The documentation references B4A available from https://www.b4x.com/b4a.html
+Requires JDK 11.0.1 (javac.exe path: ..\..\....B4A setup\jdk-11.0.1\bin)
+Requires Android SDK Platform 30 (android.jar path: ..\..\....B4A setup\android\platforms\android-30\android.jar)
+
+3. ESP8266 Connection to EMQX Server
+WiFi Credentials:
+cconst char *ssid = "ecs";
+const char *password = "ecs09876";
+MQTT Broker Configuration:
+cconst char *mqtt_broker = "broker.emqx.io";
+const char *topic = "lab_micro_usek";
+const char *mqtt_username = "emqx";
+const char *mqtt_password = "public";
+const int mqtt_port = 1883;
+Connection Process:
+
+WiFi connects first using WiFi.begin(ssid, password)
+After WiFi connection, MQTT client connects with a unique client ID based on MAC address: "esp8266-client-" + WiFi.macAddress()
+Publishes initial "hello emqx" message to the topic
+Subscribes to topic "lab_micro_usek"
+
+4. MQTT Message Format from ESP8266
+From B4A to ESP8266 (Commands):
+The ESP8266 receives text-based MQTT messages and converts them to serial characters:
+
+"on1" → Serial.write(2)
+"off1" → Serial.write(3)
+"on2" → Serial.write(4)
+"off2" → Serial.write(5)
+"on3" → Serial.write('6')
+"off3" → Serial.write('7')
+"on4" → Serial.write('8')
+"off4" → Serial.write('9')
+"dc0" → Serial.write('A')
+"dc33" → Serial.write('B')
+"dc66" → Serial.write('C')
+"dc99" → Serial.write('D')
+
+From PIC to ESP8266 (Sensor Data):
+c// ESP8266 reads from PIC via Serial and publishes
+ch = Serial.read();
+str = String(ch + 0);  // Bug workaround in Arduino
+client.publish(topic, &str[0]);
+The sensor value is sent as a single character (8-bit ADC value converted to string).
+5. B4A Application MQTT Connection
+Connection Setup:
+basicPrivate mqtt1 As MqttClient
+Private serverURI As String = "tcp://broker.emqx.io:1883"
+
+Sub Activity_Create(FirstTime As Boolean)
+    If FirstTime Then
+        mqtt1.Initialize("mqtt1", serverURI, Rnd(0, 999999) & " ")
+        Dim mo As MqttConnectOptions
+        mo.Initialize("wifi name", "password")
+        mqtt1.Connect2(mo)
+    End If
+End Sub
+Subscription:
+basicSub mqtt1_Connected (Success As Boolean)
+    If Success = False Then
+        Log(LastException)
+        Label1.Text = "Error connecting"
+    Else
+        Label1.Text = "Connected"
+        mqtt1.Subscribe("lab_micro_usek", 0)
+    End If
+End Sub
+Publishing Commands:
+basicmqtt1.Publish("lab_micro_usek", "on1".GetBytes("utf8"))
+Receiving Data:
+basicPrivate Sub mqtt1_MessageArrived (Topic As String, Payload() As Byte)
+    str = BytesToString(Payload, 0, Payload.Length, "utf8")
+    Label1.Text = "Your temperature is: " & str & "°C"
+End Sub
+6. Arduino MQTT Libraries
+Required Library:
+
+PubSubClient (specifically "PubSubClient-master")
+
+Install via Arduino IDE Library Manager
+Handles MQTT publish/subscribe functionality
+
+
+
+Additional Libraries:
+
+ESP8266WiFi.h (included with ESP8266 board package)
+
+Handles WiFi connectivity
+
+
+
+7. B4A MQTT Libraries
+Required Library:
+
+jMQTT library
+
+Enable in: Windows → Libraries Manager → check "jMQTT"
+Provides MqttClient class for MQTT operations
+
+
+
+8. Additional Configuration Details
+Serial Communication:
+
+Baud Rate: 9600 baud (both PIC and ESP8266)
+Format: 8 data bits, No parity, 1 stop bit (8N1)
+UART Settings on PIC: SPBRG=25 for 4MHz oscillator
+
+Hardware Setup:
+
+PIC16F877A: 4 MHz crystal oscillator
+Configuration Word: __CONFIG(0x1f72);
+ESP8266: WeMos D1 Mini board
+LED Pin: GPIO2 (D4) on ESP8266
+
+Proteus Simulation:
+
+Use COMPIM component for serial communication
+
+Physical Port: COM1 at 9600 baud
+Virtual Port: COM2 at 9600 baud (assigned to ESP8266's COM port)
+
+
+The ESP8266's actual COM port number must be noted after uploading code and configured in Proteus COMPIM
+
+Power Supply:
+
+PIC operates at 5V
+ESP8266 operates at 3.3V (built-in regulator on WeMos D1 Mini)
+
+This setup creates a complete IoT system where the Android app controls the PIC microcontroller via MQTT over WiFi, with the ESP8266 acting as a WiFi-to-serial bridge.

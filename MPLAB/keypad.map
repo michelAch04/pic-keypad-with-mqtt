@@ -1,0 +1,156 @@
+MPLINK 4.49, Linker
+Linker Map File - Created Sat Dec 06 17:32:34 2025
+
+                                 Section Info
+                  Section       Type    Address   Location Size(Bytes)
+                ---------  ---------  ---------  ---------  ---------
+                   .org_0       code   0x000000    program   0x000002
+                   .cinit    romdata   0x000001    program   0x000004
+                   .org_1       code   0x000004    program   0x000002
+                   .org_2       code   0x000010    program   0x0006c6
+    .config_2007_KEYPAD.O       code   0x002007    program   0x000002
+
+
+
+                              Program Memory Usage 
+                               Start         End      
+                           ---------   ---------      
+                            0x000000    0x000002      
+                            0x000004    0x000004      
+                            0x000010    0x000372      
+                            0x002007    0x002007      
+            872 out of 8454 program addresses used, program memory utilization is 10%
+
+
+
+                              Symbols - Sorted by Name
+                     Name    Address   Location    Storage File                     
+                ---------  ---------  ---------  --------- ---------                
+            ACTIVATE_COL0   0x0001b0    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+            ACTIVATE_COL1   0x0001b2    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+            ACTIVATE_COL2   0x0001b4    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+            ACTIVATE_COL3   0x0001b6    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+            ACTIVATE_COL4   0x0001b8    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+          ACTIVATE_COLUMN   0x0001a6    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+        ASCII_TABLE_START   0x00012e    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+          CALC_CHAR_INDEX   0x00010a    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+               CALC_INDEX   0x0000c3    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+              CALC_OFFSET   0x000178    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+        CHAR_KEY_RELEASED   0x000027    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+     CHECK_ROW3_NOT_SHIFT   0x0000f0    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+         CHECK_SHIFT_HELD   0x000031    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+           COL_MASK_TABLE   0x00011e    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+               DELAY_20MS   0x000369    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+         DELAY_20MS_INNER   0x00036d    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+         DELAY_20MS_OUTER   0x00036b    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+                DELAY_2MS   0x00035f    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+          DELAY_2MS_INNER   0x000363    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+          DELAY_2MS_OUTER   0x000361    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+             DISPLAY_CHAR   0x00016c    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+             DISPLAY_LOOP   0x00018a    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+           DO_CALC_OFFSET   0x00017a    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+               FONT_TABLE   0x0001ca    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+          FOUND_CHAR_ROW0   0x0000ff    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+          FOUND_CHAR_ROW1   0x000101    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+          FOUND_CHAR_ROW2   0x000104    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+          FOUND_CHAR_ROW3   0x000107    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+               FOUND_ROW0   0x0000b8    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+               FOUND_ROW1   0x0000ba    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+               FOUND_ROW2   0x0000bd    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+               FOUND_ROW3   0x0000c0    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+             GET_COL_MASK   0x000119    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+            GET_FONT_DATA   0x0001ba    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+                IDLE_MODE   0x00002f    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+          INIT_INTERRUPTS   0x00005f    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+               INIT_PORTS   0x000042    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+                INIT_UART   0x000056    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+           INIT_VARIABLES   0x000063    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+                      ISR   0x00006e    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+           ISR_CLEAR_EXIT   0x00008e    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+                 ISR_EXIT   0x000091    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+        ISR_SHIFT_PRESSED   0x00008c    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+             LOOKUP_ASCII   0x000126    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+                     MAIN   0x000010    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+                MAIN_LOOP   0x000014    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+      PROCESS_SHIFTED_KEY   0x00014e    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+           SCAN_CHAR_DONE   0x000117    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+            SCAN_CHAR_KEY   0x0000d2    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+       SCAN_CHAR_NEXT_COL   0x0000d9    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+                SCAN_DONE   0x0000d0    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+              SCAN_KEYPAD   0x000098    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+            SCAN_NEXT_COL   0x00009f    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+                SEND_CHAR   0x000163    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+               SHIFT_MODE   0x000017    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+           SHIFT_RELEASED   0x00002a    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+            SKIP_THIS_COL   0x0000f9    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+            UART_TRANSMIT   0x000165    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+                UART_WAIT   0x000166    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+         USE_DEFAULT_FONT   0x000175    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+
+
+
+                              Symbols - Sorted by Address
+                     Name    Address   Location    Storage File                     
+                ---------  ---------  ---------  --------- ---------                
+                     MAIN   0x000010    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+                MAIN_LOOP   0x000014    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+               SHIFT_MODE   0x000017    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+        CHAR_KEY_RELEASED   0x000027    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+           SHIFT_RELEASED   0x00002a    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+                IDLE_MODE   0x00002f    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+         CHECK_SHIFT_HELD   0x000031    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+               INIT_PORTS   0x000042    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+                INIT_UART   0x000056    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+          INIT_INTERRUPTS   0x00005f    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+           INIT_VARIABLES   0x000063    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+                      ISR   0x00006e    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+        ISR_SHIFT_PRESSED   0x00008c    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+           ISR_CLEAR_EXIT   0x00008e    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+                 ISR_EXIT   0x000091    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+              SCAN_KEYPAD   0x000098    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+            SCAN_NEXT_COL   0x00009f    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+               FOUND_ROW0   0x0000b8    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+               FOUND_ROW1   0x0000ba    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+               FOUND_ROW2   0x0000bd    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+               FOUND_ROW3   0x0000c0    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+               CALC_INDEX   0x0000c3    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+                SCAN_DONE   0x0000d0    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+            SCAN_CHAR_KEY   0x0000d2    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+       SCAN_CHAR_NEXT_COL   0x0000d9    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+     CHECK_ROW3_NOT_SHIFT   0x0000f0    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+            SKIP_THIS_COL   0x0000f9    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+          FOUND_CHAR_ROW0   0x0000ff    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+          FOUND_CHAR_ROW1   0x000101    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+          FOUND_CHAR_ROW2   0x000104    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+          FOUND_CHAR_ROW3   0x000107    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+          CALC_CHAR_INDEX   0x00010a    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+           SCAN_CHAR_DONE   0x000117    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+             GET_COL_MASK   0x000119    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+           COL_MASK_TABLE   0x00011e    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+             LOOKUP_ASCII   0x000126    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+        ASCII_TABLE_START   0x00012e    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+      PROCESS_SHIFTED_KEY   0x00014e    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+                SEND_CHAR   0x000163    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+            UART_TRANSMIT   0x000165    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+                UART_WAIT   0x000166    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+             DISPLAY_CHAR   0x00016c    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+         USE_DEFAULT_FONT   0x000175    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+              CALC_OFFSET   0x000178    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+           DO_CALC_OFFSET   0x00017a    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+             DISPLAY_LOOP   0x00018a    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+          ACTIVATE_COLUMN   0x0001a6    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+            ACTIVATE_COL0   0x0001b0    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+            ACTIVATE_COL1   0x0001b2    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+            ACTIVATE_COL2   0x0001b4    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+            ACTIVATE_COL3   0x0001b6    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+            ACTIVATE_COL4   0x0001b8    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+            GET_FONT_DATA   0x0001ba    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+               FONT_TABLE   0x0001ca    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+                DELAY_2MS   0x00035f    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+          DELAY_2MS_OUTER   0x000361    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+          DELAY_2MS_INNER   0x000363    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+               DELAY_20MS   0x000369    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+         DELAY_20MS_OUTER   0x00036b    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+         DELAY_20MS_INNER   0x00036d    program     static C:\Users\micho\OneDrive - Université Saint-Esprit de Kaslik\Desktop\FALL 25-26\GEL558 Microcontrollers\Project 2 - Keypad\MPLAB\keypad.asm
+
+

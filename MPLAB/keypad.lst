@@ -1,0 +1,1916 @@
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE  1
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00001 ;===============================================================================
+                      00002 ; PIC16F877A Matrix Keypad & 5x7 LED Display with UART Communication
+                      00003 ; Project: ESP8266 MQTT Interface System
+                      00004 ;===============================================================================
+                      00005 ; Description:
+                      00006 ;   - Reads input from 4x8 matrix keypad using interrupt-on-change
+                      00007 ;   - Displays pressed character on 5x7 LED matrix (multiplexed)
+                      00008 ;   - Transmits ASCII code via UART to ESP8266 at 9600 baud
+                      00009 ;   - Supports SHIFT key for uppercase letters
+                      00010 ;
+                      00011 ; Hardware Configuration:
+                      00012 ;   - Clock: 4 MHz
+                      00013 ;   - Keypad Rows (Input): RB4-RB7 (with internal pull-ups)
+                      00014 ;       Row 0 (Q row) = RB7, Row 3 (SHIFT row) = RB4 (inverted!)
+                      00015 ;   - Keypad Columns (Output): RD0-RD7
+                      00016 ;       Col 0 = RD7 (MSB), Col 7 = RD0 (LSB)
+                      00017 ;   - Display Columns: RA0-RA4 (RA4 is open-drain - needs external pull-up)
+                      00018 ;   - Display Rows: RC0-RC5, RA5
+                      00019 ;   - UART TX: RC6 (9600 baud)
+                      00020 ;===============================================================================
+                      00021 
+                      00022     LIST P=16F877A
+                      00023     #INCLUDE <P16F877A.INC>
+                      00001         LIST
+                      00002 
+                      00003 ;==========================================================================
+                      00004 ;  MPASM PIC16F877A processor include
+                      00005 ; 
+                      00006 ;  (c) Copyright 1999-2013 Microchip Technology, All rights reserved
+                      00007 ;==========================================================================
+                      00008 
+                      00566         LIST
+                      00024 
+                      00025 ;-------------------------------------------------------------------------------
+                      00026 ; Configuration Bits
+                      00027 ;-------------------------------------------------------------------------------
+2007   3F71           00028     __CONFIG _FOSC_XT & _WDTE_OFF & _PWRTE_ON & _BOREN_ON & _LVP_OFF & _CPD_OFF & _WRT_OFF & _CP_OFF
+                      00029 
+                      00030 ;-------------------------------------------------------------------------------
+                      00031 ; Variable Definitions (Bank 0: 0x20-0x7F)
+                      00032 ;-------------------------------------------------------------------------------
+                      00033     CBLOCK  0x20
+  00000020            00034         W_TEMP          
+  00000021            00035         STATUS_TEMP     
+  00000022            00036         PCLATH_TEMP     
+                      00037         
+  00000023            00038         CURRENT_CHAR    
+  00000024            00039         COL_INDEX       
+  00000025            00040         ROW_DATA        
+                      00041         
+  00000026            00042         KEY_ROW         
+  00000027            00043         KEY_COL         
+  00000028            00044         KEY_INDEX       
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE  2
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00045         
+  00000029            00046         SHIFT_FLAG      
+  0000002A            00047         NEW_KEY_FLAG    
+                      00048         
+  0000002B            00049         DELAY_COUNT1    
+  0000002C            00050         DELAY_COUNT2    
+  0000002D            00051         DELAY_COUNT3    
+                      00052         
+  0000002E            00053         SCAN_COL        
+  0000002F            00054         TEMP_VAR        
+  00000030            00055         FONT_OFFSET_L   
+  00000031            00056         FONT_OFFSET_H   
+                      00057 
+  00000032            00058         ISR_DELAY_COUNT1
+  00000033            00059         ISR_DELAY_COUNT2
+                      00060         
+  00000034            00061         LAST_KEY_INDEX  ; ADD THIS - tracks last processed key to prevent repeats
+                      00062     ENDC
+                      00063 
+                      00064 ;-------------------------------------------------------------------------------
+                      00065 ; Constants
+                      00066 ;-------------------------------------------------------------------------------
+  00000061            00067 DEFAULT_CHAR    EQU     'a'         ; Default character to display
+  00000018            00068 SHIFT_INDEX_L   EQU     D'24'       ; Left shift key index (row3, col0)
+  0000001F            00069 SHIFT_INDEX_R   EQU     D'31'       ; Right shift key index (row3, col7)
+                      00070 
+                      00071 ;-------------------------------------------------------------------------------
+                      00072 ; Reset Vector
+                      00073 ;-------------------------------------------------------------------------------
+                      00074     ORG     0x0000
+0000   2???           00075     GOTO    MAIN
+                      00076 
+                      00077 ;-------------------------------------------------------------------------------
+                      00078 ; Interrupt Vector
+                      00079 ;-------------------------------------------------------------------------------
+                      00080     ORG     0x0004
+0004   2???           00081     GOTO    ISR
+                      00082 
+                      00083 ;===============================================================================
+                      00084 ; MAIN PROGRAM
+                      00085 ;===============================================================================
+                      00086     ORG     0x0010
+                      00087 
+0010                  00088 MAIN:
+0010   2???           00089     CALL    INIT_PORTS          ; Initialize I/O ports
+0011   2???           00090     CALL    INIT_UART           ; Initialize UART at 9600 baud
+0012   2???           00091     CALL    INIT_INTERRUPTS     ; Initialize interrupts
+0013   2???           00092     CALL    INIT_VARIABLES      ; Initialize variables
+                      00093     
+                      00094 ;-------------------------------------------------------------------------------
+                      00095 ; Main Loop - Display Multiplexing with Shift Key Polling
+                      00096 ;-------------------------------------------------------------------------------
+0014                  00097 MAIN_LOOP:
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE  3
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00098     ; Always refresh display first (critical for no flicker)
+0014   2???           00099     CALL    DISPLAY_CHAR
+                      00100     
+                      00101     ; Check if in shift mode
+0015   1C29           00102     BTFSS   SHIFT_FLAG, 0
+0016   2???           00103     GOTO    IDLE_MODE
+                      00104     
+                      00105 ;-------------------------------------------------------------------------------
+                      00106 ; SHIFT Mode - Poll for shift release and character keys
+                      00107 ; FIX: Use dedicated character key scan that ignores row 3 (shift row)
+                      00108 ;-------------------------------------------------------------------------------
+0017                  00109 SHIFT_MODE:
+                      00110     ; Disable Port B interrupts during polling
+0017   118B           00111     BCF     INTCON, RBIE
+                      00112     
+                      00113     ; First check: Is shift key still held?
+0018   2???           00114     CALL    CHECK_SHIFT_HELD
+0019   1C29           00115     BTFSS   SHIFT_FLAG, 0
+001A   2???           00116     GOTO    SHIFT_RELEASED      ; Shift was released
+                      00117     
+                      00118     ; Scan for CHARACTER keys only (ignores shift row)
+001B   2???           00119     CALL    SCAN_CHAR_KEY
+                      00120     
+                      00121     ; Check if a character key was found
+001C   1C2A           00122     BTFSS   NEW_KEY_FLAG, 0
+001D   2???           00123     GOTO    CHAR_KEY_RELEASED   ; No char key pressed, check for repeat reset
+                      00124     
+                      00125     ; Check if this is the SAME key as last time (prevent repeats)
+001E   0828           00126     MOVF    KEY_INDEX, W
+001F   0634           00127     XORWF   LAST_KEY_INDEX, W
+0020   1903           00128     BTFSC   STATUS, Z
+0021   2???           00129     GOTO    MAIN_LOOP           ; Same key still held, don't repeat
+                      00130     
+                      00131     ; NEW character key detected - process it
+0022   0828           00132     MOVF    KEY_INDEX, W
+0023   00B4           00133     MOVWF   LAST_KEY_INDEX      ; Remember this key
+                      00134     
+0024   2???           00135     CALL    PROCESS_SHIFTED_KEY
+0025   102A           00136     BCF     NEW_KEY_FLAG, 0
+0026   2???           00137     GOTO    MAIN_LOOP
+                      00138 
+0027                  00139 CHAR_KEY_RELEASED:
+                      00140     ; No character key pressed - reset last key tracker
+0027   30FF           00141     MOVLW   0xFF
+0028   00B4           00142     MOVWF   LAST_KEY_INDEX
+0029   2???           00143     GOTO    MAIN_LOOP
+                      00144     
+002A                  00145 SHIFT_RELEASED:
+                      00146     ; Shift key released - re-enable interrupts
+002A   102A           00147     BCF     NEW_KEY_FLAG, 0
+002B   30FF           00148     MOVLW   0xFF
+002C   00B4           00149     MOVWF   LAST_KEY_INDEX      ; Reset key tracker
+002D   158B           00150     BSF     INTCON, RBIE
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE  4
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+002E   2???           00151     GOTO    MAIN_LOOP
+                      00152 
+                      00153 ;-------------------------------------------------------------------------------
+                      00154 ; IDLE Mode - Wait for interrupt
+                      00155 ;-------------------------------------------------------------------------------
+002F                  00156 IDLE_MODE:
+                      00157     ; Enable Port B interrupts
+002F   158B           00158     BSF     INTCON, RBIE
+0030   2???           00159     GOTO    MAIN_LOOP
+                      00160 
+                      00161 ;-------------------------------------------------------------------------------
+                      00162 ; Check if shift key is currently held (checks both shift positions)
+                      00163 ; Sets SHIFT_FLAG if either shift is pressed
+                      00164 ; Col 0 = RD7, Col 7 = RD0, Row 3 = RB4 (not RB7!)
+                      00165 ;-------------------------------------------------------------------------------
+0031                  00166 CHECK_SHIFT_HELD:
+0031   1029           00167     BCF     SHIFT_FLAG, 0       ; Assume not held
+                      00168     
+                      00169     ; Check left shift (col 0 = RD0, row 3 = RB7)
+0032   30FF           00170     MOVLW   0xFF
+0033   0088           00171     MOVWF   PORTD
+0034   1008           00172     BCF     PORTD, 0            ; Activate column 0 (RD0 low)
+0035   0000           00173     NOP
+0036   0000           00174     NOP
+0037   1F86           00175     BTFSS   PORTB, 7            ; Check RB7 (row 3)
+0038   1429           00176     BSF     SHIFT_FLAG, 0       ; Left shift is held
+                      00177     
+                      00178     ; Check right shift (col 7 = RD7, row 3 = RB7)
+0039   30FF           00179     MOVLW   0xFF
+003A   0088           00180     MOVWF   PORTD
+003B   1388           00181     BCF     PORTD, 7            ; Activate column 7 (RD7 low)
+003C   0000           00182     NOP
+003D   0000           00183     NOP
+003E   1F86           00184     BTFSS   PORTB, 7            ; Check RB7 (row 3)
+003F   1429           00185     BSF     SHIFT_FLAG, 0       ; Right shift is held
+                      00186     
+                      00187     ; Reset columns
+0040   0188           00188     CLRF    PORTD
+0041   0008           00189     RETURN
+                      00190 
+                      00191 ;===============================================================================
+                      00192 ; INITIALIZATION SUBROUTINES
+                      00193 ;===============================================================================
+                      00194 
+                      00195 ;-------------------------------------------------------------------------------
+                      00196 ; Initialize I/O Ports
+                      00197 ;-------------------------------------------------------------------------------
+0042                  00198 INIT_PORTS:
+                      00199     ; Bank 1 for TRIS registers
+0042   1683           00200     BSF     STATUS, RP0
+0043   1303           00201     BCF     STATUS, RP1
+                      00202     
+                      00203     ; Configure PORTA (display columns + row 7)
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE  5
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00204     ; RA0-RA4 outputs (columns), RA5 output (row 7)
+0044   3000           00205     MOVLW   B'00000000'
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0045   0085           00206     MOVWF   TRISA
+                      00207     
+                      00208     ; Configure PORTB
+                      00209     ; RB4-RB7 inputs (keypad rows), RB0-RB3 unused
+0046   30F0           00210     MOVLW   B'11110000'
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0047   0086           00211     MOVWF   TRISB
+                      00212     
+                      00213     ; Configure PORTC
+                      00214     ; RC0-RC5 outputs (display rows), RC6 output (TX), RC7 input (RX)
+0048   3080           00215     MOVLW   B'10000000'
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0049   0087           00216     MOVWF   TRISC
+                      00217     
+                      00218     ; Configure PORTD - all outputs (keypad columns)
+004A   3000           00219     MOVLW   B'00000000'
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+004B   0088           00220     MOVWF   TRISD
+                      00221     
+                      00222     ; Enable weak pull-ups on PORTB
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+004C   1381           00223     BCF     OPTION_REG, NOT_RBPU
+                      00224     
+                      00225     ; Configure ADCON1 - all digital I/O
+004D   3006           00226     MOVLW   0x06
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+004E   009F           00227     MOVWF   ADCON1
+                      00228     
+                      00229     ; Bank 0
+004F   1283           00230     BCF     STATUS, RP0
+                      00231     
+                      00232     ; Initialize port outputs
+0050   0185           00233     CLRF    PORTA               ; All columns off
+0051   307F           00234     MOVLW   B'01111111'         ; All rows high (LEDs off - active low)
+0052   0087           00235     MOVWF   PORTC
+0053   1685           00236     BSF     PORTA, 5            ; RA5 high (row 7 off)
+0054   0188           00237     CLRF    PORTD               ; All keypad columns LOW (for interrupt detection)
+                      00238     
+0055   0008           00239     RETURN
+                      00240 
+                      00241 ;-------------------------------------------------------------------------------
+                      00242 ; Initialize UART at 9600 baud (4 MHz clock)
+                      00243 ;-------------------------------------------------------------------------------
+0056                  00244 INIT_UART:
+                      00245     ; Bank 1
+0056   1683           00246     BSF     STATUS, RP0
+                      00247     
+                      00248     ; SPBRG = 25 for 9600 baud @ 4 MHz with BRGH=1
+0057   3019           00249     MOVLW   D'25'
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE  6
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+0058   0099           00250     MOVWF   SPBRG
+                      00251     
+                      00252     ; TXSTA: Enable transmission, high speed baud rate
+                      00253     ; TXEN=1, SYNC=0, BRGH=1
+0059   3024           00254     MOVLW   B'00100100'
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+005A   0098           00255     MOVWF   TXSTA
+                      00256     
+                      00257     ; Bank 0
+005B   1283           00258     BCF     STATUS, RP0
+                      00259     
+                      00260     ; RCSTA: Enable serial port
+                      00261     ; SPEN=1
+005C   3080           00262     MOVLW   B'10000000'
+005D   0098           00263     MOVWF   RCSTA
+                      00264     
+005E   0008           00265     RETURN
+                      00266 
+                      00267 ;-------------------------------------------------------------------------------
+                      00268 ; Initialize Interrupts
+                      00269 ;-------------------------------------------------------------------------------
+005F                  00270 INIT_INTERRUPTS:
+                      00271     ; Clear PORTB interrupt flag
+005F   100B           00272     BCF     INTCON, RBIF
+                      00273     
+                      00274     ; Enable PORTB change interrupt
+0060   158B           00275     BSF     INTCON, RBIE
+                      00276     
+                      00277     ; Enable global interrupts
+0061   178B           00278     BSF     INTCON, GIE
+                      00279     
+0062   0008           00280     RETURN
+                      00281 
+                      00282 ;-------------------------------------------------------------------------------
+                      00283 ; Initialize Variables
+                      00284 ;-------------------------------------------------------------------------------
+0063                  00285 INIT_VARIABLES:
+                      00286     ; Set default character
+0063   3061           00287     MOVLW   DEFAULT_CHAR
+0064   00A3           00288     MOVWF   CURRENT_CHAR
+                      00289     
+                      00290     ; Clear flags - FIX: was incorrectly BSF instead of CLRF
+0065   01A9           00291     CLRF    SHIFT_FLAG
+0066   01AA           00292     CLRF    NEW_KEY_FLAG
+0067   01A4           00293     CLRF    COL_INDEX
+0068   01A6           00294     CLRF    KEY_ROW
+0069   01A7           00295     CLRF    KEY_COL
+006A   01A8           00296     CLRF    KEY_INDEX
+                      00297 
+006B   30FF           00298     MOVLW   0xFF                ; Initialize to invalid key
+006C   00B4           00299     MOVWF   LAST_KEY_INDEX      ; ADD THIS
+                      00300     
+006D   0008           00301     RETURN
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE  7
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00302 
+                      00303 ;===============================================================================
+                      00304 ; INTERRUPT SERVICE ROUTINE
+                      00305 ;===============================================================================
+006E                  00306 ISR:
+                      00307     ; --- Context Saving ---
+006E   00A0           00308     MOVWF   W_TEMP
+006F   0E03           00309     SWAPF   STATUS, W
+0070   00A1           00310     MOVWF   STATUS_TEMP
+0071   080A           00311     MOVF    PCLATH, W
+0072   00A2           00312     MOVWF   PCLATH_TEMP
+                      00313     
+                      00314     ; --- CRITICAL FIX: Reset PCLATH for ISR Code ---
+0073   018A           00315     CLRF    PCLATH          ; Assuming ISR code is in Page 0
+                      00316     
+                      00317     ; --- Interrupt Logic ---
+0074   1C0B           00318     BTFSS   INTCON, RBIF
+0075   2???           00319     GOTO    ISR_EXIT
+                      00320     
+                      00321     ; Debounce delay (20ms)
+0076   2???           00322     CALL    DELAY_20MS
+                      00323     
+                      00324     ; Read PORTB to clear mismatch condition
+0077   0806           00325     MOVF    PORTB, W
+                      00326     
+                      00327     ; Check if any row is LOW (key pressed)
+0078   39F0           00328     ANDLW   B'11110000'         ; Mask rows RB4-RB7
+0079   3AF0           00329     XORLW   B'11110000'         ; Compare with all HIGH
+007A   1903           00330     BTFSC   STATUS, Z
+007B   2???           00331     GOTO    ISR_CLEAR_EXIT      ; No key pressed, exit
+                      00332     
+                      00333     ; Scan keypad to find pressed key
+007C   2???           00334     CALL    SCAN_KEYPAD
+                      00335     
+                      00336     ; Check if new key was found
+007D   1C2A           00337     BTFSS   NEW_KEY_FLAG, 0
+007E   2???           00338     GOTO    ISR_CLEAR_EXIT
+                      00339     
+                      00340     ; Check if SHIFT key pressed
+007F   0828           00341     MOVF    KEY_INDEX, W
+0080   3A18           00342     XORLW   SHIFT_INDEX_L
+0081   1903           00343     BTFSC   STATUS, Z
+0082   2???           00344     GOTO    ISR_SHIFT_PRESSED
+                      00345     
+0083   0828           00346     MOVF    KEY_INDEX, W
+0084   3A1F           00347     XORLW   SHIFT_INDEX_R
+0085   1903           00348     BTFSC   STATUS, Z
+0086   2???           00349     GOTO    ISR_SHIFT_PRESSED
+                      00350     
+0087   0828           00351         MOVF    KEY_INDEX, W
+                      00352 
+                      00353     ; Regular key - lookup ASCII and process
+0088   2???           00354     CALL    LOOKUP_ASCII
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE  8
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+0089   00A3           00355     MOVWF   CURRENT_CHAR
+                      00356     
+                      00357     ; Transmit via UART
+008A   2???           00358     CALL    UART_TRANSMIT
+                      00359     
+008B   2???           00360     GOTO    ISR_CLEAR_EXIT
+                      00361     
+008C                  00362 ISR_SHIFT_PRESSED:
+                      00363     ; Set shift flag and disable interrupt
+008C   1429           00364     BSF     SHIFT_FLAG, 0
+008D   118B           00365     BCF     INTCON, RBIE        ; Disable PORTB interrupt for polling mode
+                      00366     
+008E                  00367 ISR_CLEAR_EXIT:
+                      00368     ; Clear new key flag
+008E   102A           00369     BCF     NEW_KEY_FLAG, 0
+                      00370     
+                      00371     ; Reset keypad columns to LOW
+008F   0188           00372     CLRF    PORTD
+                      00373     
+                      00374     ; Clear interrupt flag
+0090   100B           00375     BCF     INTCON, RBIF
+                      00376     
+0091                  00377 ISR_EXIT:
+                      00378     ; Restore context
+0091   0822           00379     MOVF    PCLATH_TEMP, W
+0092   008A           00380     MOVWF   PCLATH
+0093   0E21           00381     SWAPF   STATUS_TEMP, W
+0094   0083           00382     MOVWF   STATUS
+0095   0EA0           00383     SWAPF   W_TEMP, F
+0096   0E20           00384     SWAPF   W_TEMP, W
+                      00385     
+0097   0009           00386     RETFIE
+                      00387 
+                      00388 ;===============================================================================
+                      00389 ; KEYPAD SCANNING SUBROUTINE
+                      00390 ;===============================================================================
+0098                  00391 SCAN_KEYPAD:
+                      00392     ; Clear flags
+0098   102A           00393     BCF     NEW_KEY_FLAG, 0
+0099   01A6           00394     CLRF    KEY_ROW
+009A   01A7           00395     CLRF    KEY_COL
+009B   01A8           00396     CLRF    KEY_INDEX
+                      00397     
+                      00398     ; Set all columns HIGH first
+009C   30FF           00399     MOVLW   0xFF
+009D   0088           00400     MOVWF   PORTD
+                      00401     
+                      00402     ; Walking zero scan
+009E   01AE           00403     CLRF    SCAN_COL            ; Start with column 0
+                      00404 
+009F                  00405 SCAN_NEXT_COL:
+                      00406     ; Set only current column LOW
+009F   30FF           00407     MOVLW   0xFF
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE  9
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+00A0   0088           00408     MOVWF   PORTD               ; All columns HIGH
+                      00409     
+                      00410     ; Calculate bit mask for current column (active LOW)
+                      00411     ; Col 0 = RD7 (MSB), Col 7 = RD0 (LSB)
+00A1   082E           00412     MOVF    SCAN_COL, W
+00A2   2???           00413     CALL    GET_COL_MASK        ; Get inverted mask
+00A3   0088           00414     MOVWF   PORTD               ; Apply to columns
+                      00415     
+                      00416     ; Small delay for signal settling
+00A4   0000           00417     NOP
+00A5   0000           00418     NOP
+00A6   0000           00419     NOP
+00A7   0000           00420     NOP
+                      00421     
+                      00422     ; Read rows - Row 0 = RB7, Row 3 = RB4 (inverted physical mapping)
+00A8   0806           00423     MOVF    PORTB, W
+00A9   39F0           00424     ANDLW   B'11110000'         ; Mask rows
+                      00425     
+                      00426     ; Check Row 0 (RB7 - Q W E R T Y U I row)
+00AA   1E06           00427     BTFSS   PORTB, 4
+00AB   2???           00428     GOTO    FOUND_ROW0
+                      00429     
+                      00430     ; Check Row 1 (RB6 - A S D F G H J K row)
+00AC   1E86           00431     BTFSS   PORTB, 5
+00AD   2???           00432     GOTO    FOUND_ROW1
+                      00433     
+                      00434     ; Check Row 2 (RB5 - Z X C V B N M L row)
+00AE   1F06           00435     BTFSS   PORTB, 6
+00AF   2???           00436     GOTO    FOUND_ROW2
+                      00437     
+                      00438     ; Check Row 3 (RB4 - SHIFT O P / * + - SHIFT row)
+00B0   1F86           00439     BTFSS   PORTB, 7
+00B1   2???           00440     GOTO    FOUND_ROW3
+                      00441     
+                      00442     ; No key in this column, try next
+00B2   0AAE           00443     INCF    SCAN_COL, F
+00B3   082E           00444     MOVF    SCAN_COL, W
+00B4   3A08           00445     XORLW   D'8'
+00B5   1D03           00446     BTFSS   STATUS, Z
+00B6   2???           00447     GOTO    SCAN_NEXT_COL
+                      00448     
+                      00449     ; No key found
+00B7   2???           00450     GOTO    SCAN_DONE
+                      00451 
+00B8                  00452 FOUND_ROW0:
+00B8   01A6           00453     CLRF    KEY_ROW             ; Row 0
+00B9   2???           00454     GOTO    CALC_INDEX
+                      00455     
+00BA                  00456 FOUND_ROW1:
+00BA   3001           00457     MOVLW   D'1'
+00BB   00A6           00458     MOVWF   KEY_ROW             ; Row 1
+00BC   2???           00459     GOTO    CALC_INDEX
+                      00460     
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 10
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+00BD                  00461 FOUND_ROW2:
+00BD   3002           00462     MOVLW   D'2'
+00BE   00A6           00463     MOVWF   KEY_ROW             ; Row 2
+00BF   2???           00464     GOTO    CALC_INDEX
+                      00465     
+00C0                  00466 FOUND_ROW3:
+00C0   3003           00467     MOVLW   D'3'
+00C1   00A6           00468     MOVWF   KEY_ROW             ; Row 3
+00C2   2???           00469     GOTO    CALC_INDEX
+                      00470 
+00C3                  00471 CALC_INDEX:
+00C3   082E           00472     MOVF    SCAN_COL, W
+00C4   00A7           00473     MOVWF   KEY_COL
+                      00474     
+                      00475     ; ROW * 8 (shift left 3 times)
+00C5   0826           00476     MOVF    KEY_ROW, W
+00C6   00A8           00477     MOVWF   KEY_INDEX
+00C7   1003           00478     BCF     STATUS, C
+00C8   0DA8           00479     RLF     KEY_INDEX, F        ; *2
+00C9   1003           00480     BCF     STATUS, C
+00CA   0DA8           00481     RLF     KEY_INDEX, F        ; *4
+00CB   1003           00482     BCF     STATUS, C
+00CC   0DA8           00483     RLF     KEY_INDEX, F        ; *8
+                      00484     
+                      00485     ; Add column
+00CD   0827           00486     MOVF    KEY_COL, W
+00CE   07A8           00487     ADDWF   KEY_INDEX, F
+                      00488     
+                      00489     ; Set new key flag
+00CF   142A           00490     BSF     NEW_KEY_FLAG, 0
+                      00491 
+00D0                  00492 SCAN_DONE:
+                      00493     ; Reset all columns LOW to ensure interrupts work for next press
+00D0   0188           00494     CLRF    PORTD
+00D1   0008           00495     RETURN
+                      00496 
+                      00497 ;===============================================================================
+                      00498 ; SCAN FOR CHARACTER KEYS ONLY (ignores SHIFT keys at row3/col0 and row3/col7)
+                      00499 ; This allows detecting character keys while shift is held
+                      00500 ;===============================================================================
+00D2                  00501 SCAN_CHAR_KEY:
+                      00502     ; Clear flags
+00D2   102A           00503     BCF     NEW_KEY_FLAG, 0
+00D3   01A6           00504     CLRF    KEY_ROW
+00D4   01A7           00505     CLRF    KEY_COL
+00D5   01A8           00506     CLRF    KEY_INDEX
+                      00507     
+                      00508     ; Set all columns HIGH first
+00D6   30FF           00509     MOVLW   0xFF
+00D7   0088           00510     MOVWF   PORTD
+                      00511     
+                      00512     ; Walking zero scan
+00D8   01AE           00513     CLRF    SCAN_COL
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 11
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00514 
+00D9                  00515 SCAN_CHAR_NEXT_COL:
+                      00516     ; Set only current column LOW
+00D9   30FF           00517     MOVLW   0xFF
+00DA   0088           00518     MOVWF   PORTD
+                      00519     
+                      00520     ; Get column mask
+00DB   082E           00521     MOVF    SCAN_COL, W
+00DC   2???           00522     CALL    GET_COL_MASK
+00DD   0088           00523     MOVWF   PORTD
+                      00524     
+                      00525     ; Small delay for signal settling
+00DE   0000           00526     NOP
+00DF   0000           00527     NOP
+00E0   0000           00528     NOP
+00E1   0000           00529     NOP
+                      00530     
+                      00531     ; Check all rows 0-3
+                      00532     ; Row 0 = RB4, Row 1 = RB5, Row 2 = RB6, Row 3 = RB7
+                      00533     
+00E2   1E06           00534     BTFSS   PORTB, 4
+00E3   2???           00535     GOTO    FOUND_CHAR_ROW0
+                      00536     
+00E4   1E86           00537     BTFSS   PORTB, 5
+00E5   2???           00538     GOTO    FOUND_CHAR_ROW1
+                      00539     
+00E6   1F06           00540     BTFSS   PORTB, 6
+00E7   2???           00541     GOTO    FOUND_CHAR_ROW2
+                      00542     
+00E8   1F86           00543     BTFSS   PORTB, 7
+00E9   2???           00544     GOTO    CHECK_ROW3_NOT_SHIFT    ; Row 3 found - but check if it's a shift key
+                      00545     
+                      00546     ; No key in this column, try next
+00EA   0AAE           00547     INCF    SCAN_COL, F
+00EB   082E           00548     MOVF    SCAN_COL, W
+00EC   3A08           00549     XORLW   D'8'
+00ED   1D03           00550     BTFSS   STATUS, Z
+00EE   2???           00551     GOTO    SCAN_CHAR_NEXT_COL
+                      00552     
+                      00553     ; No character key found
+00EF   2???           00554     GOTO    SCAN_CHAR_DONE
+                      00555 
+00F0                  00556 CHECK_ROW3_NOT_SHIFT:
+                      00557     ; Row 3 key detected - check if it's column 0 or 7 (shift keys)
+00F0   082E           00558     MOVF    SCAN_COL, W
+00F1   3A00           00559     XORLW   D'0'                ; Is it column 0 (left shift)?
+00F2   1903           00560     BTFSC   STATUS, Z
+00F3   2???           00561     GOTO    SKIP_THIS_COL       ; Yes, skip left shift
+                      00562     
+00F4   082E           00563     MOVF    SCAN_COL, W
+00F5   3A07           00564     XORLW   D'7'                ; Is it column 7 (right shift)?
+00F6   1903           00565     BTFSC   STATUS, Z
+00F7   2???           00566     GOTO    SKIP_THIS_COL       ; Yes, skip right shift
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 12
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00567     
+                      00568     ; It's a valid row 3 character key (O, P, /, *, +, -)
+00F8   2???           00569     GOTO    FOUND_CHAR_ROW3
+                      00570 
+00F9                  00571 SKIP_THIS_COL:
+                      00572     ; This column has a shift key pressed, continue to next column
+00F9   0AAE           00573     INCF    SCAN_COL, F
+00FA   082E           00574     MOVF    SCAN_COL, W
+00FB   3A08           00575     XORLW   D'8'
+00FC   1D03           00576     BTFSS   STATUS, Z
+00FD   2???           00577     GOTO    SCAN_CHAR_NEXT_COL
+                      00578     
+                      00579     ; No character key found
+00FE   2???           00580     GOTO    SCAN_CHAR_DONE
+                      00581 
+00FF                  00582 FOUND_CHAR_ROW0:
+00FF   01A6           00583     CLRF    KEY_ROW
+0100   2???           00584     GOTO    CALC_CHAR_INDEX
+                      00585     
+0101                  00586 FOUND_CHAR_ROW1:
+0101   3001           00587     MOVLW   D'1'
+0102   00A6           00588     MOVWF   KEY_ROW
+0103   2???           00589     GOTO    CALC_CHAR_INDEX
+                      00590     
+0104                  00591 FOUND_CHAR_ROW2:
+0104   3002           00592     MOVLW   D'2'
+0105   00A6           00593     MOVWF   KEY_ROW
+0106   2???           00594     GOTO    CALC_CHAR_INDEX
+                      00595 
+0107                  00596 FOUND_CHAR_ROW3:
+0107   3003           00597     MOVLW   D'3'
+0108   00A6           00598     MOVWF   KEY_ROW
+0109   2???           00599     GOTO    CALC_CHAR_INDEX
+                      00600 
+010A                  00601 CALC_CHAR_INDEX:
+010A   082E           00602     MOVF    SCAN_COL, W
+010B   00A7           00603     MOVWF   KEY_COL
+                      00604     
+                      00605     ; KEY_INDEX = ROW * 8 + COL
+010C   0826           00606     MOVF    KEY_ROW, W
+010D   00A8           00607     MOVWF   KEY_INDEX
+010E   1003           00608     BCF     STATUS, C
+010F   0DA8           00609     RLF     KEY_INDEX, F
+0110   1003           00610     BCF     STATUS, C
+0111   0DA8           00611     RLF     KEY_INDEX, F
+0112   1003           00612     BCF     STATUS, C
+0113   0DA8           00613     RLF     KEY_INDEX, F
+                      00614     
+0114   0827           00615     MOVF    KEY_COL, W
+0115   07A8           00616     ADDWF   KEY_INDEX, F
+                      00617     
+0116   142A           00618     BSF     NEW_KEY_FLAG, 0
+                      00619 
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 13
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+0117                  00620 SCAN_CHAR_DONE:
+0117   0188           00621     CLRF    PORTD
+0118   0008           00622     RETURN
+                      00623 
+                      00624 ;-------------------------------------------------------------------------------
+                      00625 ; Get Column Mask (returns mask with bit N cleared)
+                      00626 ; Input: W = column number (0-7)
+                      00627 ; Output: W = mask with appropriate bit cleared
+                      00628 ; MAPPING: Col 0 = RD7 (MSB), Col 7 = RD0 (LSB)
+                      00629 ;-------------------------------------------------------------------------------
+0119                  00630 GET_COL_MASK:
+                      00631     ; 1. Save Column Index (W)
+0119   00AF           00632     MOVWF   TEMP_VAR
+                      00633     
+                      00634     ; 2. Set PCLATH to point to THIS routine
+011A   30??           00635     MOVLW   HIGH COL_MASK_TABLE
+011B   008A           00636     MOVWF   PCLATH
+                      00637     
+                      00638     ; 3. Restore W
+011C   082F           00639     MOVF    TEMP_VAR, W
+                      00640     
+                      00641     ; 4. Jump
+011D   0782           00642     ADDWF   PCL, F
+                      00643 
+011E                  00644 COL_MASK_TABLE:
+                      00645     ; REVERSED MAPPING: Col 0 = RD0 (bit 0), Col 7 = RD7 (bit 7)
+011E   34FE           00646     RETLW   B'11111110'         ; Col 0 -> clear bit 0 (RD0)
+011F   34FD           00647     RETLW   B'11111101'         ; Col 1 -> clear bit 1 (RD1)
+0120   34FB           00648     RETLW   B'11111011'         ; Col 2 -> clear bit 2 (RD2)
+0121   34F7           00649     RETLW   B'11110111'         ; Col 3 -> clear bit 3 (RD3)
+0122   34EF           00650     RETLW   B'11101111'         ; Col 4 -> clear bit 4 (RD4)
+0123   34DF           00651     RETLW   B'11011111'         ; Col 5 -> clear bit 5 (RD5)
+0124   34BF           00652     RETLW   B'10111111'         ; Col 6 -> clear bit 6 (RD6)
+0125   347F           00653     RETLW   B'01111111'         ; Col 7 -> clear bit 7 (RD7)
+                      00654 
+                      00655 ;===============================================================================
+                      00656 ; ASCII LOOKUP TABLE
+                      00657 ;===============================================================================
+                      00658 ; Keypad layout (matching Proteus schematic):
+                      00659 ; Row 0: Q W E R T Y U I
+                      00660 ; Row 1: A S D F G H J K
+                      00661 ; Row 2: Z X C V B N M L
+                      00662 ; Row 3: SHIFT O P / * + - SHIFT
+                      00663 ;
+                      00664 ; Returns lowercase by default
+                      00665 ;-------------------------------------------------------------------------------
+0126                  00666 LOOKUP_ASCII:
+                      00667     ; 1. Save the Offset (Key Index) temporarily
+0126   00AF           00668     MOVWF   TEMP_VAR        ; Save W (Key Index) to temp
+                      00669 
+                      00670     ; 2. Set PCLATH to point to THIS table's page
+0127   30??           00671     MOVLW   HIGH ASCII_TABLE_START
+0128   008A           00672     MOVWF   PCLATH
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 14
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00673 
+                      00674     ; 3. Add the Offset to the Table Base Address
+0129   082F           00675     MOVF    TEMP_VAR, W     ; Restore Key Index
+012A   3E??           00676     ADDLW   LOW ASCII_TABLE_START
+                      00677     
+                      00678     ; 4. Handle Carry if we cross a 256-byte boundary
+012B   1803           00679     BTFSC   STATUS, C
+012C   0A8A           00680     INCF    PCLATH, F
+                      00681     
+                      00682     ; 5. The Jump
+012D   0082           00683     MOVWF   PCL
+                      00684 
+012E                  00685 ASCII_TABLE_START:
+                      00686     ; Row 0 (indices 0-7): Q W E R T Y U I
+012E   3471           00687     RETLW   'q'             ; Index 0
+012F   3477           00688     RETLW   'w'             ; Index 1
+0130   3465           00689     RETLW   'e'             ; Index 2
+0131   3472           00690     RETLW   'r'             ; Index 3
+0132   3474           00691     RETLW   't'             ; Index 4
+0133   3479           00692     RETLW   'y'             ; Index 5
+0134   3475           00693     RETLW   'u'             ; Index 6
+0135   3469           00694     RETLW   'i'             ; Index 7
+                      00695     
+                      00696     ; Row 1 (indices 8-15): A S D F G H J K
+0136   3461           00697     RETLW   'a'             ; Index 8
+0137   3473           00698     RETLW   's'             ; Index 9
+0138   3464           00699     RETLW   'd'             ; Index 10
+0139   3466           00700     RETLW   'f'             ; Index 11
+013A   3467           00701     RETLW   'g'             ; Index 12
+013B   3468           00702     RETLW   'h'             ; Index 13
+013C   346A           00703     RETLW   'j'             ; Index 14
+013D   346B           00704     RETLW   'k'             ; Index 15
+                      00705     
+                      00706     ; Row 2 (indices 16-23): Z X C V B N M L
+013E   347A           00707     RETLW   'z'             ; Index 16
+013F   3478           00708     RETLW   'x'             ; Index 17
+0140   3463           00709     RETLW   'c'             ; Index 18
+0141   3476           00710     RETLW   'v'             ; Index 19
+0142   3462           00711     RETLW   'b'             ; Index 20
+0143   346E           00712     RETLW   'n'             ; Index 21
+0144   346D           00713     RETLW   'm'             ; Index 22
+0145   346C           00714     RETLW   'l'             ; Index 23
+                      00715     
+                      00716     ; Row 3 (indices 24-31): SHIFT O P / * + - SHIFT
+0146   3400           00717     RETLW   0x00            ; Index 24 - LEFT SHIFT
+0147   346F           00718     RETLW   'o'             ; Index 25
+0148   3470           00719     RETLW   'p'             ; Index 26
+0149   342F           00720     RETLW   '/'             ; Index 27
+014A   342A           00721     RETLW   '*'             ; Index 28
+014B   342B           00722     RETLW   '+'             ; Index 29
+014C   342D           00723     RETLW   '-'             ; Index 30
+014D   3400           00724     RETLW   0x00            ; Index 31 - RIGHT SHIFT
+                      00725 
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 15
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00726 ;-------------------------------------------------------------------------------
+                      00727 ; Process Shifted Key - Convert to uppercase if applicable
+                      00728 ;-------------------------------------------------------------------------------
+014E                  00729 PROCESS_SHIFTED_KEY:
+                      00730     ; Skip if shift key itself
+014E   0828           00731     MOVF    KEY_INDEX, W
+014F   3A18           00732     XORLW   SHIFT_INDEX_L
+0150   1903           00733     BTFSC   STATUS, Z
+0151   0008           00734     RETURN
+0152   0828           00735     MOVF    KEY_INDEX, W
+0153   3A1F           00736     XORLW   SHIFT_INDEX_R
+0154   1903           00737     BTFSC   STATUS, Z
+0155   0008           00738     RETURN
+                      00739     
+                      00740     ; Get ASCII code - CRITICAL FIX: Reload KEY_INDEX into W!
+0156   0828           00741     MOVF    KEY_INDEX, W        ; <-- THIS LINE WAS MISSING!
+0157   2???           00742     CALL    LOOKUP_ASCII
+0158   00A3           00743     MOVWF   CURRENT_CHAR
+                      00744     
+                      00745     ; Check if lowercase letter (a-z: 0x61-0x7A)
+0159   0823           00746     MOVF    CURRENT_CHAR, W
+015A   3C7A           00747     SUBLW   'z'                 ; W = 'z' - CURRENT_CHAR
+015B   1C03           00748     BTFSS   STATUS, C           ; Skip if CURRENT_CHAR <= 'z'
+015C   2???           00749     GOTO    SEND_CHAR           ; Not a letter, send as-is
+                      00750     
+015D   3061           00751     MOVLW   'a'
+015E   0223           00752     SUBWF   CURRENT_CHAR, W     ; W = CURRENT_CHAR - 'a'
+015F   1C03           00753     BTFSS   STATUS, C           ; Skip if CURRENT_CHAR >= 'a'
+0160   2???           00754     GOTO    SEND_CHAR           ; Not a letter, send as-is
+                      00755     
+                      00756     ; Convert to uppercase (subtract 0x20)
+0161   3020           00757     MOVLW   D'32'
+0162   02A3           00758     SUBWF   CURRENT_CHAR, F
+                      00759 
+0163                  00760 SEND_CHAR:
+                      00761     ; Transmit via UART
+0163   2???           00762     CALL    UART_TRANSMIT
+                      00763     
+0164   0008           00764     RETURN
+                      00765 
+                      00766 ;===============================================================================
+                      00767 ; UART TRANSMISSION
+                      00768 ;===============================================================================
+0165                  00769 UART_TRANSMIT:
+                      00770     ; Wait for transmit buffer to be empty
+0165   1683           00771     BSF     STATUS, RP0         ; Bank 1
+0166                  00772 UART_WAIT:
+Message[302]: Register in operand not in bank 0.  Ensure that bank bits are correct.
+0166   1C98           00773     BTFSS   TXSTA, TRMT         ; Check if TSR is empty
+0167   2???           00774     GOTO    UART_WAIT
+0168   1283           00775     BCF     STATUS, RP0         ; Bank 0
+                      00776     
+                      00777     ; Transmit character
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 16
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+0169   0823           00778     MOVF    CURRENT_CHAR, W
+016A   0099           00779     MOVWF   TXREG
+                      00780     
+016B   0008           00781     RETURN
+                      00782 
+                      00783 ;===============================================================================
+                      00784 ; DISPLAY SUBROUTINES
+                      00785 ;===============================================================================
+                      00786 
+                      00787 ;-------------------------------------------------------------------------------
+                      00788 ; Display Character - Multiplexed 5x7 LED matrix
+                      00789 ; Active HIGH columns (RA0-RA4)
+                      00790 ; Active LOW rows (RC0-RC5, RA5)
+                      00791 ;-------------------------------------------------------------------------------
+016C                  00792 DISPLAY_CHAR:
+                      00793     ; --- Step 1: Range Check ---
+016C   0823           00794     MOVF    CURRENT_CHAR, W
+016D   3C29           00795     SUBLW   ')'                 ; Check if char < '*'
+016E   1803           00796     BTFSC   STATUS, C
+016F   2???           00797     GOTO    USE_DEFAULT_FONT
+                      00798 
+0170   0823           00799     MOVF    CURRENT_CHAR, W
+0171   3C7A           00800     SUBLW   'z'                 ; Check if char > 'z'
+0172   1C03           00801     BTFSS   STATUS, C
+0173   2???           00802     GOTO    USE_DEFAULT_FONT
+0174   2???           00803     GOTO    CALC_OFFSET
+                      00804 
+0175                  00805 USE_DEFAULT_FONT:
+0175   3061           00806     MOVLW   DEFAULT_CHAR
+0176   00AF           00807     MOVWF   TEMP_VAR
+0177   2???           00808     GOTO    DO_CALC_OFFSET
+                      00809 
+0178                  00810 CALC_OFFSET:
+0178   0823           00811     MOVF    CURRENT_CHAR, W
+0179   00AF           00812     MOVWF   TEMP_VAR
+                      00813 
+017A                  00814 DO_CALC_OFFSET:
+                      00815     ; --- Step 2: Calculate 16-bit Offset = (Char - 42) * 5 ---
+                      00816     
+                      00817     ; A. Subtract Base (42)
+017A   302A           00818     MOVLW   D'42'
+017B   022F           00819     SUBWF   TEMP_VAR, W         ; W = Char - 42
+017C   00B0           00820     MOVWF   FONT_OFFSET_L       ; L = Base Index
+017D   01B1           00821     CLRF    FONT_OFFSET_H       ; H = 0
+                      00822 
+                      00823     ; B. Multiply by 4 (Shift Left twice)
+                      00824     ; Shift 1 (x2)
+017E   1003           00825     BCF     STATUS, C
+017F   0DB0           00826     RLF     FONT_OFFSET_L, F
+0180   0DB1           00827     RLF     FONT_OFFSET_H, F    ; Carry rotates into High Byte
+                      00828     ; Shift 2 (x4)
+0181   1003           00829     BCF     STATUS, C
+0182   0DB0           00830     RLF     FONT_OFFSET_L, F
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 17
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+0183   0DB1           00831     RLF     FONT_OFFSET_H, F
+                      00832 
+                      00833     ; C. Add Original (x4 + x1 = x5)
+0184   302A           00834     MOVLW   D'42'               ; Reload original char
+0185   022F           00835     SUBWF   TEMP_VAR, W         ; Get original index again (Char-42)
+0186   07B0           00836     ADDWF   FONT_OFFSET_L, F    ; Add to Low Byte
+0187   1803           00837     BTFSC   STATUS, C           ; Did Low Byte overflow?
+0188   0AB1           00838     INCF    FONT_OFFSET_H, F    ; Yes, increment High Byte
+                      00839 
+                      00840     ; --- Step 3: Display Loop ---
+0189   01A4           00841     CLRF    COL_INDEX
+                      00842 
+018A                  00843 DISPLAY_LOOP:
+                      00844     ; Turn off all columns first
+018A   1005           00845     BCF     PORTA, 0
+018B   1085           00846     BCF     PORTA, 1
+018C   1105           00847     BCF     PORTA, 2
+018D   1185           00848     BCF     PORTA, 3
+018E   1205           00849     BCF     PORTA, 4
+                      00850 
+                      00851     ; Get row data using the 16-bit offset
+018F   2???           00852     CALL    GET_FONT_DATA
+0190   00A5           00853     MOVWF   ROW_DATA
+                      00854 
+                      00855     ; Output row data (active LOW)
+0191   0925           00856     COMF    ROW_DATA, W         ; Invert for active low
+0192   393F           00857     ANDLW   B'00111111'         ; Mask bits 0-5
+0193   0087           00858     MOVWF   PORTC               ; RC0-RC5
+                      00859     
+                      00860     ; Handle bit 6 -> RA5
+0194   1F25           00861     BTFSS   ROW_DATA, 6
+0195   1685           00862     BSF     PORTA, 5            ; LED on
+0196   1B25           00863     BTFSC   ROW_DATA, 6
+0197   1285           00864     BCF     PORTA, 5            ; LED off
+                      00865 
+                      00866     ; Activate current column
+0198   0824           00867     MOVF    COL_INDEX, W
+0199   2???           00868     CALL    ACTIVATE_COLUMN
+                      00869 
+                      00870     ; Delay and Cleanup
+019A   2???           00871     CALL    DELAY_2MS
+                      00872     
+                      00873     ; Turn off columns
+019B   1005           00874     BCF     PORTA, 0
+019C   1085           00875     BCF     PORTA, 1
+019D   1105           00876     BCF     PORTA, 2
+019E   1185           00877     BCF     PORTA, 3
+019F   1205           00878     BCF     PORTA, 4
+                      00879 
+                      00880     ; Next column
+01A0   0AA4           00881     INCF    COL_INDEX, F
+01A1   0824           00882     MOVF    COL_INDEX, W
+01A2   3A05           00883     XORLW   D'5'
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 18
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+01A3   1D03           00884     BTFSS   STATUS, Z
+01A4   2???           00885     GOTO    DISPLAY_LOOP
+                      00886 
+01A5   0008           00887     RETURN
+                      00888 
+                      00889 ;-------------------------------------------------------------------------------
+                      00890 ; Activate Display Column
+                      00891 ; Input: W = column number (0-4)
+                      00892 ;-------------------------------------------------------------------------------
+01A6                  00893 ACTIVATE_COLUMN:
+                      00894     ; 1. Save the column index (W) temporarily so we don't lose it
+01A6   00AF           00895     MOVWF   TEMP_VAR
+                      00896 
+                      00897     ; 2. Set PCLATH to point to THIS routine's location in memory
+01A7   30??           00898     MOVLW   HIGH ACTIVATE_COLUMN
+01A8   008A           00899     MOVWF   PCLATH
+                      00900 
+                      00901     ; 3. Restore the column index into W
+01A9   082F           00902     MOVF    TEMP_VAR, W
+                      00903 
+                      00904     ; 4. Perform the Computed GOTO
+01AA   0782           00905     ADDWF   PCL, F
+                      00906     
+                      00907     ; Jump Table
+01AB   2???           00908     GOTO    ACTIVATE_COL0
+01AC   2???           00909     GOTO    ACTIVATE_COL1
+01AD   2???           00910     GOTO    ACTIVATE_COL2
+01AE   2???           00911     GOTO    ACTIVATE_COL3
+01AF   2???           00912     GOTO    ACTIVATE_COL4
+                      00913 
+01B0                  00914 ACTIVATE_COL0:
+01B0   1405           00915     BSF     PORTA, 0
+01B1   0008           00916     RETURN
+01B2                  00917 ACTIVATE_COL1:
+01B2   1485           00918     BSF     PORTA, 1
+01B3   0008           00919     RETURN
+01B4                  00920 ACTIVATE_COL2:
+01B4   1505           00921     BSF     PORTA, 2
+01B5   0008           00922     RETURN
+01B6                  00923 ACTIVATE_COL3:
+01B6   1585           00924     BSF     PORTA, 3
+01B7   0008           00925     RETURN
+01B8                  00926 ACTIVATE_COL4:
+01B8   1605           00927     BSF     PORTA, 4            ; Note: RA4 is open-drain, needs external pull-up
+01B9   0008           00928     RETURN
+                      00929 
+                      00930 ;===============================================================================
+                      00931 ; FONT TABLE (5x7)
+                      00932 ; Characters from '*' (0x2A) to 'z' (0x7A)
+                      00933 ; Each character has 5 bytes (columns), LSB = top row
+                      00934 ; Bit 0 = Row 0 (top), Bit 6 = Row 6 (bottom), Bit 7 = unused
+                      00935 ;===============================================================================
+01BA                  00936 GET_FONT_DATA:
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 19
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00937     ; 1. Add COL_INDEX to the Low Byte of the offset
+01BA   0824           00938     MOVF    COL_INDEX, W
+01BB   0730           00939     ADDWF   FONT_OFFSET_L, W    ; Add column to low byte
+01BC   00AF           00940     MOVWF   TEMP_VAR            ; Store temporarily
+                      00941     
+                      00942     ; 2. Handle Carry (if Col index caused overflow)
+01BD   0831           00943     MOVF    FONT_OFFSET_H, W    ; Get high byte
+01BE   1803           00944     BTFSC   STATUS, C           ; Did the add overflow?
+01BF   3E01           00945     ADDLW   1                   ; Yes, add 1 to High Byte accumulator
+01C0   00A2           00946     MOVWF   PCLATH_TEMP         ; Save calculated High Byte temporarily
+                      00947 
+                      00948     ; 3. Add Table Base Address HIGH Byte
+01C1   30??           00949     MOVLW   HIGH FONT_TABLE
+01C2   07A2           00950     ADDWF   PCLATH_TEMP, F      ; Add table location to our offset
+                      00951 
+                      00952     ; 4. Set PCLATH
+01C3   0822           00953     MOVF    PCLATH_TEMP, W
+01C4   008A           00954     MOVWF   PCLATH
+                      00955 
+                      00956     ; 5. Add Table Base Address LOW Byte
+01C5   082F           00957     MOVF    TEMP_VAR, W         ; Get our calculated low offset
+01C6   3E??           00958     ADDLW   LOW FONT_TABLE      ; Add table start location
+                      00959     
+                      00960     ; 6. Final Overflow Check
+                      00961     ; If (Low_Offset + Table_Low) overflows, we must increment PCLATH
+01C7   1803           00962     BTFSC   STATUS, C
+01C8   0A8A           00963     INCF    PCLATH, F
+                      00964     
+                      00965     ; 7. The Jump
+01C9   0082           00966     MOVWF   PCL                 ; Jump to Table
+                      00967 
+01CA                  00968 FONT_TABLE:
+                      00969     ; '*' (42) - asterisk
+01CA   3414 3408 343E 00970     DT      0x14, 0x08, 0x3E, 0x08, 0x14
+       3408 3414 
+                      00971     ; '+' (43) - plus
+01CF   3408 3408 343E 00972     DT      0x08, 0x08, 0x3E, 0x08, 0x08
+       3408 3408 
+                      00973     ; ',' (44) - comma
+01D4   3400 3450 3430 00974     DT      0x00, 0x50, 0x30, 0x00, 0x00
+       3400 3400 
+                      00975     ; '-' (45) - minus
+01D9   3408 3408 3408 00976     DT      0x08, 0x08, 0x08, 0x08, 0x08
+       3408 3408 
+                      00977     ; '.' (46) - period
+01DE   3400 3460 3460 00978     DT      0x00, 0x60, 0x60, 0x00, 0x00
+       3400 3400 
+                      00979     ; '/' (47) - slash
+01E3   3420 3410 3408 00980     DT      0x20, 0x10, 0x08, 0x04, 0x02
+       3404 3402 
+                      00981     ; '0' (48)
+01E8   343E 3451 3449 00982     DT      0x3E, 0x51, 0x49, 0x45, 0x3E
+       3445 343E 
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 20
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00983     ; '1' (49)
+01ED   3400 3442 347F 00984     DT      0x00, 0x42, 0x7F, 0x40, 0x00
+       3440 3400 
+                      00985     ; '2' (50)
+01F2   3442 3461 3451 00986     DT      0x42, 0x61, 0x51, 0x49, 0x46
+       3449 3446 
+                      00987     ; '3' (51)
+01F7   3421 3441 3445 00988     DT      0x21, 0x41, 0x45, 0x4B, 0x31
+       344B 3431 
+                      00989     ; '4' (52)
+01FC   3418 3414 3412 00990     DT      0x18, 0x14, 0x12, 0x7F, 0x10
+       347F 3410 
+                      00991     ; '5' (53)
+0201   3427 3445 3445 00992     DT      0x27, 0x45, 0x45, 0x45, 0x39
+       3445 3439 
+                      00993     ; '6' (54)
+0206   343C 344A 3449 00994     DT      0x3C, 0x4A, 0x49, 0x49, 0x30
+       3449 3430 
+                      00995     ; '7' (55)
+020B   3401 3471 3409 00996     DT      0x01, 0x71, 0x09, 0x05, 0x03
+       3405 3403 
+                      00997     ; '8' (56)
+0210   3436 3449 3449 00998     DT      0x36, 0x49, 0x49, 0x49, 0x36
+       3449 3436 
+                      00999     ; '9' (57)
+0215   3406 3449 3449 01000     DT      0x06, 0x49, 0x49, 0x29, 0x1E
+       3429 341E 
+                      01001     ; ':' (58)
+021A   3400 3436 3436 01002     DT      0x00, 0x36, 0x36, 0x00, 0x00
+       3400 3400 
+                      01003     ; ';' (59)
+021F   3400 3456 3436 01004     DT      0x00, 0x56, 0x36, 0x00, 0x00
+       3400 3400 
+                      01005     ; '<' (60)
+0224   3408 3414 3422 01006     DT      0x08, 0x14, 0x22, 0x41, 0x00
+       3441 3400 
+                      01007     ; '=' (61)
+0229   3414 3414 3414 01008     DT      0x14, 0x14, 0x14, 0x14, 0x14
+       3414 3414 
+                      01009     ; '>' (62)
+022E   3400 3441 3422 01010     DT      0x00, 0x41, 0x22, 0x14, 0x08
+       3414 3408 
+                      01011     ; '?' (63)
+0233   3402 3401 3451 01012     DT      0x02, 0x01, 0x51, 0x09, 0x06
+       3409 3406 
+                      01013     ; '@' (64)
+0238   3432 3449 3479 01014     DT      0x32, 0x49, 0x79, 0x41, 0x3E
+       3441 343E 
+                      01015     ; 'A' (65)
+023D   347E 3411 3411 01016     DT      0x7E, 0x11, 0x11, 0x11, 0x7E
+       3411 347E 
+                      01017     ; 'B' (66)
+0242   347F 3449 3449 01018     DT      0x7F, 0x49, 0x49, 0x49, 0x36
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 21
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+       3449 3436 
+                      01019     ; 'C' (67)
+0247   343E 3441 3441 01020     DT      0x3E, 0x41, 0x41, 0x41, 0x22
+       3441 3422 
+                      01021     ; 'D' (68)
+024C   347F 3441 3441 01022     DT      0x7F, 0x41, 0x41, 0x22, 0x1C
+       3422 341C 
+                      01023     ; 'E' (69)
+0251   347F 3449 3449 01024     DT      0x7F, 0x49, 0x49, 0x49, 0x41
+       3449 3441 
+                      01025     ; 'F' (70)
+0256   347F 3409 3409 01026     DT      0x7F, 0x09, 0x09, 0x09, 0x01
+       3409 3401 
+                      01027     ; 'G' (71)
+025B   343E 3441 3449 01028     DT      0x3E, 0x41, 0x49, 0x49, 0x7A
+       3449 347A 
+                      01029     ; 'H' (72)
+0260   347F 3408 3408 01030     DT      0x7F, 0x08, 0x08, 0x08, 0x7F
+       3408 347F 
+                      01031     ; 'I' (73)
+0265   3400 3441 347F 01032     DT      0x00, 0x41, 0x7F, 0x41, 0x00
+       3441 3400 
+                      01033     ; 'J' (74)
+026A   3420 3440 3441 01034     DT      0x20, 0x40, 0x41, 0x3F, 0x01
+       343F 3401 
+                      01035     ; 'K' (75)
+026F   347F 3408 3414 01036     DT      0x7F, 0x08, 0x14, 0x22, 0x41
+       3422 3441 
+                      01037     ; 'L' (76)
+0274   347F 3440 3440 01038     DT      0x7F, 0x40, 0x40, 0x40, 0x40
+       3440 3440 
+                      01039     ; 'M' (77)
+0279   347F 3402 340C 01040     DT      0x7F, 0x02, 0x0C, 0x02, 0x7F
+       3402 347F 
+                      01041     ; 'N' (78)
+027E   347F 3404 3408 01042     DT      0x7F, 0x04, 0x08, 0x10, 0x7F
+       3410 347F 
+                      01043     ; 'O' (79)
+0283   343E 3441 3441 01044     DT      0x3E, 0x41, 0x41, 0x41, 0x3E
+       3441 343E 
+                      01045     ; 'P' (80)
+0288   347F 3409 3409 01046     DT      0x7F, 0x09, 0x09, 0x09, 0x06
+       3409 3406 
+                      01047     ; 'Q' (81)
+028D   343E 3441 3451 01048     DT      0x3E, 0x41, 0x51, 0x21, 0x5E
+       3421 345E 
+                      01049     ; 'R' (82)
+0292   347F 3409 3419 01050     DT      0x7F, 0x09, 0x19, 0x29, 0x46
+       3429 3446 
+                      01051     ; 'S' (83)
+0297   3446 3449 3449 01052     DT      0x46, 0x49, 0x49, 0x49, 0x31
+       3449 3431 
+                      01053     ; 'T' (84)
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 22
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+029C   3401 3401 347F 01054     DT      0x01, 0x01, 0x7F, 0x01, 0x01
+       3401 3401 
+                      01055     ; 'U' (85)
+02A1   343F 3440 3440 01056     DT      0x3F, 0x40, 0x40, 0x40, 0x3F
+       3440 343F 
+                      01057     ; 'V' (86)
+02A6   341F 3420 3440 01058     DT      0x1F, 0x20, 0x40, 0x20, 0x1F
+       3420 341F 
+                      01059     ; 'W' (87)
+02AB   343F 3440 3438 01060     DT      0x3F, 0x40, 0x38, 0x40, 0x3F
+       3440 343F 
+                      01061     ; 'X' (88)
+02B0   3463 3414 3408 01062     DT      0x63, 0x14, 0x08, 0x14, 0x63
+       3414 3463 
+                      01063     ; 'Y' (89)
+02B5   3407 3408 3470 01064     DT      0x07, 0x08, 0x70, 0x08, 0x07
+       3408 3407 
+                      01065     ; 'Z' (90)
+02BA   3461 3451 3449 01066     DT      0x61, 0x51, 0x49, 0x45, 0x43
+       3445 3443 
+                      01067     ; '[' (91)
+02BF   3400 347F 3441 01068     DT      0x00, 0x7F, 0x41, 0x41, 0x00
+       3441 3400 
+                      01069     ; '\' (92)
+02C4   3402 3404 3408 01070     DT      0x02, 0x04, 0x08, 0x10, 0x20
+       3410 3420 
+                      01071     ; ']' (93)
+02C9   3400 3441 3441 01072     DT      0x00, 0x41, 0x41, 0x7F, 0x00
+       347F 3400 
+                      01073     ; '^' (94)
+02CE   3404 3402 3401 01074     DT      0x04, 0x02, 0x01, 0x02, 0x04
+       3402 3404 
+                      01075     ; '_' (95)
+02D3   3440 3440 3440 01076     DT      0x40, 0x40, 0x40, 0x40, 0x40
+       3440 3440 
+                      01077     ; '`' (96)
+02D8   3400 3401 3402 01078     DT      0x00, 0x01, 0x02, 0x04, 0x00
+       3404 3400 
+                      01079     ; 'a' (97)
+02DD   3420 3454 3454 01080     DT      0x20, 0x54, 0x54, 0x54, 0x78
+       3454 3478 
+                      01081     ; 'b' (98)
+02E2   347F 3448 3444 01082     DT      0x7F, 0x48, 0x44, 0x44, 0x38
+       3444 3438 
+                      01083     ; 'c' (99)
+02E7   3438 3444 3444 01084     DT      0x38, 0x44, 0x44, 0x44, 0x20
+       3444 3420 
+                      01085     ; 'd' (100)
+02EC   3438 3444 3444 01086     DT      0x38, 0x44, 0x44, 0x48, 0x7F
+       3448 347F 
+                      01087     ; 'e' (101)
+02F1   3438 3454 3454 01088     DT      0x38, 0x54, 0x54, 0x54, 0x18
+       3454 3418 
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 23
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      01089     ; 'f' (102)
+02F6   3408 347E 3409 01090     DT      0x08, 0x7E, 0x09, 0x01, 0x02
+       3401 3402 
+                      01091     ; 'g' (103)
+02FB   340C 3452 3452 01092     DT      0x0C, 0x52, 0x52, 0x52, 0x3E
+       3452 343E 
+                      01093     ; 'h' (104)
+0300   347F 3408 3404 01094     DT      0x7F, 0x08, 0x04, 0x04, 0x78
+       3404 3478 
+                      01095     ; 'i' (105)
+0305   3400 3444 347D 01096     DT      0x00, 0x44, 0x7D, 0x40, 0x00
+       3440 3400 
+                      01097     ; 'j' (106)
+030A   3420 3440 3444 01098     DT      0x20, 0x40, 0x44, 0x3D, 0x00
+       343D 3400 
+                      01099     ; 'k' (107)
+030F   347F 3410 3428 01100     DT      0x7F, 0x10, 0x28, 0x44, 0x00
+       3444 3400 
+                      01101     ; 'l' (108)
+0314   3400 3441 347F 01102     DT      0x00, 0x41, 0x7F, 0x40, 0x00
+       3440 3400 
+                      01103     ; 'm' (109)
+0319   347C 3404 3418 01104     DT      0x7C, 0x04, 0x18, 0x04, 0x78
+       3404 3478 
+                      01105     ; 'n' (110)
+031E   347C 3408 3404 01106     DT      0x7C, 0x08, 0x04, 0x04, 0x78
+       3404 3478 
+                      01107     ; 'o' (111)
+0323   3438 3444 3444 01108     DT      0x38, 0x44, 0x44, 0x44, 0x38
+       3444 3438 
+                      01109     ; 'p' (112)
+0328   347C 3414 3414 01110     DT      0x7C, 0x14, 0x14, 0x14, 0x08
+       3414 3408 
+                      01111     ; 'q' (113)
+032D   3408 3414 3414 01112     DT      0x08, 0x14, 0x14, 0x18, 0x7C
+       3418 347C 
+                      01113     ; 'r' (114)
+0332   347C 3408 3404 01114     DT      0x7C, 0x08, 0x04, 0x04, 0x08
+       3404 3408 
+                      01115     ; 's' (115)
+0337   3448 3454 3454 01116     DT      0x48, 0x54, 0x54, 0x54, 0x20
+       3454 3420 
+                      01117     ; 't' (116)
+033C   3404 343F 3444 01118     DT      0x04, 0x3F, 0x44, 0x40, 0x20
+       3440 3420 
+                      01119     ; 'u' (117)
+0341   343C 3440 3440 01120     DT      0x3C, 0x40, 0x40, 0x20, 0x7C
+       3420 347C 
+                      01121     ; 'v' (118)
+0346   341C 3420 3440 01122     DT      0x1C, 0x20, 0x40, 0x20, 0x1C
+       3420 341C 
+                      01123     ; 'w' (119)
+034B   343C 3440 3430 01124     DT      0x3C, 0x40, 0x30, 0x40, 0x3C
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 24
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+       3440 343C 
+                      01125     ; 'x' (120)
+0350   3444 3428 3410 01126     DT      0x44, 0x28, 0x10, 0x28, 0x44
+       3428 3444 
+                      01127     ; 'y' (121)
+0355   340C 3450 3450 01128     DT      0x0C, 0x50, 0x50, 0x50, 0x3C
+       3450 343C 
+                      01129     ; 'z' (122)
+035A   3444 3464 3454 01130     DT      0x44, 0x64, 0x54, 0x4C, 0x44
+       344C 3444 
+                      01131 
+                      01132 ;===============================================================================
+                      01133 ; DELAY SUBROUTINES
+                      01134 ;===============================================================================
+                      01135 
+                      01136 ;-------------------------------------------------------------------------------
+                      01137 ; Delay 2ms (for display multiplexing)
+                      01138 ; At 4 MHz, each instruction cycle = 1 us
+                      01139 ; 2ms = 2000 cycles
+                      01140 ;-------------------------------------------------------------------------------
+035F                  01141 DELAY_2MS:
+035F   3004           01142     MOVLW   D'4'
+0360   00AB           01143     MOVWF   DELAY_COUNT1
+0361                  01144 DELAY_2MS_OUTER:
+0361   30A6           01145     MOVLW   D'166'
+0362   00AC           01146     MOVWF   DELAY_COUNT2
+0363                  01147 DELAY_2MS_INNER:
+0363   0000           01148     NOP
+0364   0BAC           01149     DECFSZ  DELAY_COUNT2, F
+0365   2???           01150     GOTO    DELAY_2MS_INNER
+0366   0BAB           01151     DECFSZ  DELAY_COUNT1, F
+0367   2???           01152     GOTO    DELAY_2MS_OUTER
+0368   0008           01153     RETURN
+                      01154 
+                      01155 ;-------------------------------------------------------------------------------
+                      01156 ; Delay 20ms (for debouncing)
+                      01157 ; 20ms = 20000 cycles
+                      01158 ;-------------------------------------------------------------------------------
+0369                  01159 DELAY_20MS:
+0369   3028           01160     MOVLW   D'40'
+036A   00B2           01161     MOVWF   ISR_DELAY_COUNT1
+036B                  01162 DELAY_20MS_OUTER:
+036B   30A6           01163     MOVLW   D'166'
+036C   00B3           01164     MOVWF   ISR_DELAY_COUNT2
+036D                  01165 DELAY_20MS_INNER:
+036D   0000           01166     NOP
+036E   0BB3           01167     DECFSZ  ISR_DELAY_COUNT2, F
+036F   2???           01168     GOTO    DELAY_20MS_INNER
+0370   0BB2           01169     DECFSZ  ISR_DELAY_COUNT1, F
+0371   2???           01170     GOTO    DELAY_20MS_OUTER
+0372   0008           01171     RETURN
+                      01172 
+                      01173 ;===============================================================================
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 25
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      01174 ; END OF PROGRAM
+                      01175 ;===============================================================================
+3F71                  01176     END
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 26
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+ACKDT                             00000005
+ACKEN                             00000004
+ACKSTAT                           00000006
+ACTIVATE_COL0                     000001B0
+ACTIVATE_COL1                     000001B2
+ACTIVATE_COL2                     000001B4
+ACTIVATE_COL3                     000001B6
+ACTIVATE_COL4                     000001B8
+ACTIVATE_COLUMN                   000001A6
+ADCON0                            0000001F
+ADCON1                            0000009F
+ADCS0                             00000006
+ADCS1                             00000007
+ADCS2                             00000006
+ADDEN                             00000003
+ADFM                              00000007
+ADIE                              00000006
+ADIF                              00000006
+ADON                              00000000
+ADRESH                            0000001E
+ADRESL                            0000009E
+ASCII_TABLE_START                 0000012E
+BCLIE                             00000003
+BCLIF                             00000003
+BF                                00000000
+BRGH                              00000002
+C                                 00000000
+C1INV                             00000004
+C1OUT                             00000006
+C2INV                             00000005
+C2OUT                             00000007
+CALC_CHAR_INDEX                   0000010A
+CALC_INDEX                        000000C3
+CALC_OFFSET                       00000178
+CCP1CON                           00000017
+CCP1IE                            00000002
+CCP1IF                            00000002
+CCP1M0                            00000000
+CCP1M1                            00000001
+CCP1M2                            00000002
+CCP1M3                            00000003
+CCP1X                             00000005
+CCP1Y                             00000004
+CCP2CON                           0000001D
+CCP2IE                            00000000
+CCP2IF                            00000000
+CCP2M0                            00000000
+CCP2M1                            00000001
+CCP2M2                            00000002
+CCP2M3                            00000003
+CCP2X                             00000005
+CCP2Y                             00000004
+CCPR1                             00000015
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 27
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+CCPR1H                            00000016
+CCPR1L                            00000015
+CCPR2                             0000001B
+CCPR2H                            0000001C
+CCPR2L                            0000001B
+CHAR_KEY_RELEASED                 00000027
+CHECK_ROW3_NOT_SHIFT              000000F0
+CHECK_SHIFT_HELD                  00000031
+CHS0                              00000003
+CHS1                              00000004
+CHS2                              00000005
+CIS                               00000003
+CKE                               00000006
+CKP                               00000004
+CM0                               00000000
+CM1                               00000001
+CM2                               00000002
+CMCON                             0000009C
+CMIE                              00000006
+CMIF                              00000006
+COL_INDEX                         00000024
+COL_MASK_TABLE                    0000011E
+CREN                              00000004
+CSRC                              00000007
+CURRENT_CHAR                      00000023
+CVR0                              00000000
+CVR1                              00000001
+CVR2                              00000002
+CVR3                              00000003
+CVRCON                            0000009D
+CVREN                             00000007
+CVROE                             00000006
+CVRR                              00000005
+D                                 00000005
+DATA_ADDRESS                      00000005
+DC                                00000001
+DEFAULT_CHAR                      00000061
+DELAY_20MS                        00000369
+DELAY_20MS_INNER                  0000036D
+DELAY_20MS_OUTER                  0000036B
+DELAY_2MS                         0000035F
+DELAY_2MS_INNER                   00000363
+DELAY_2MS_OUTER                   00000361
+DELAY_COUNT1                      0000002B
+DELAY_COUNT2                      0000002C
+DELAY_COUNT3                      0000002D
+DISPLAY_CHAR                      0000016C
+DISPLAY_LOOP                      0000018A
+DO_CALC_OFFSET                    0000017A
+D_A                               00000005
+D_NOT_A                           00000005
+EEADR                             0000010D
+EEADRH                            0000010F
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 28
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+EECON1                            0000018C
+EECON2                            0000018D
+EEDATA                            0000010C
+EEDATH                            0000010E
+EEIE                              00000004
+EEIF                              00000004
+EEPGD                             00000007
+F                                 00000001
+FERR                              00000002
+FONT_OFFSET_H                     00000031
+FONT_OFFSET_L                     00000030
+FONT_TABLE                        000001CA
+FOUND_CHAR_ROW0                   000000FF
+FOUND_CHAR_ROW1                   00000101
+FOUND_CHAR_ROW2                   00000104
+FOUND_CHAR_ROW3                   00000107
+FOUND_ROW0                        000000B8
+FOUND_ROW1                        000000BA
+FOUND_ROW2                        000000BD
+FOUND_ROW3                        000000C0
+FSR                               00000004
+GCEN                              00000007
+GET_COL_MASK                      00000119
+GET_FONT_DATA                     000001BA
+GIE                               00000007
+GO                                00000002
+GO_DONE                           00000002
+GO_NOT_DONE                       00000002
+I2C_DATA                          00000005
+I2C_READ                          00000002
+I2C_START                         00000003
+I2C_STOP                          00000004
+IBF                               00000007
+IBOV                              00000005
+IDLE_MODE                         0000002F
+INDF                              00000000
+INIT_INTERRUPTS                   0000005F
+INIT_PORTS                        00000042
+INIT_UART                         00000056
+INIT_VARIABLES                    00000063
+INTCON                            0000000B
+INTE                              00000004
+INTEDG                            00000006
+INTF                              00000001
+IRP                               00000007
+ISR                               0000006E
+ISR_CLEAR_EXIT                    0000008E
+ISR_DELAY_COUNT1                  00000032
+ISR_DELAY_COUNT2                  00000033
+ISR_EXIT                          00000091
+ISR_SHIFT_PRESSED                 0000008C
+KEY_COL                           00000027
+KEY_INDEX                         00000028
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 29
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+KEY_ROW                           00000026
+LAST_KEY_INDEX                    00000034
+LOOKUP_ASCII                      00000126
+MAIN                              00000010
+MAIN_LOOP                         00000014
+NEW_KEY_FLAG                      0000002A
+NOT_A                             00000005
+NOT_ADDRESS                       00000005
+NOT_BO                            00000000
+NOT_BOR                           00000000
+NOT_DONE                          00000002
+NOT_PD                            00000003
+NOT_POR                           00000001
+NOT_RBPU                          00000007
+NOT_RC8                           00000006
+NOT_T1SYNC                        00000002
+NOT_TO                            00000004
+NOT_TX8                           00000006
+NOT_W                             00000002
+NOT_WRITE                         00000002
+OBF                               00000006
+OERR                              00000001
+OPTION_REG                        00000081
+P                                 00000004
+PCFG0                             00000000
+PCFG1                             00000001
+PCFG2                             00000002
+PCFG3                             00000003
+PCL                               00000002
+PCLATH                            0000000A
+PCLATH_TEMP                       00000022
+PCON                              0000008E
+PEIE                              00000006
+PEN                               00000002
+PIE1                              0000008C
+PIE2                              0000008D
+PIR1                              0000000C
+PIR2                              0000000D
+PORTA                             00000005
+PORTB                             00000006
+PORTC                             00000007
+PORTD                             00000008
+PORTE                             00000009
+PR2                               00000092
+PROCESS_SHIFTED_KEY               0000014E
+PS0                               00000000
+PS1                               00000001
+PS2                               00000002
+PSA                               00000003
+PSPIE                             00000007
+PSPIF                             00000007
+PSPMODE                           00000004
+R                                 00000002
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 30
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+RA0                               00000000
+RA1                               00000001
+RA2                               00000002
+RA3                               00000003
+RA4                               00000004
+RA5                               00000005
+RB0                               00000000
+RB1                               00000001
+RB2                               00000002
+RB3                               00000003
+RB4                               00000004
+RB5                               00000005
+RB6                               00000006
+RB7                               00000007
+RBIE                              00000003
+RBIF                              00000000
+RC0                               00000000
+RC1                               00000001
+RC2                               00000002
+RC3                               00000003
+RC4                               00000004
+RC5                               00000005
+RC6                               00000006
+RC7                               00000007
+RC8_9                             00000006
+RC9                               00000006
+RCD8                              00000000
+RCEN                              00000003
+RCIE                              00000005
+RCIF                              00000005
+RCREG                             0000001A
+RCSTA                             00000018
+RD                                00000000
+RD0                               00000000
+RD1                               00000001
+RD2                               00000002
+RD3                               00000003
+RD4                               00000004
+RD5                               00000005
+RD6                               00000006
+RD7                               00000007
+RE0                               00000000
+RE1                               00000001
+RE2                               00000002
+READ_WRITE                        00000002
+ROW_DATA                          00000025
+RP0                               00000005
+RP1                               00000006
+RSEN                              00000001
+RX9                               00000006
+RX9D                              00000000
+R_NOT_W                           00000002
+R_W                               00000002
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 31
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+S                                 00000003
+SCAN_CHAR_DONE                    00000117
+SCAN_CHAR_KEY                     000000D2
+SCAN_CHAR_NEXT_COL                000000D9
+SCAN_COL                          0000002E
+SCAN_DONE                         000000D0
+SCAN_KEYPAD                       00000098
+SCAN_NEXT_COL                     0000009F
+SEN                               00000000
+SEND_CHAR                         00000163
+SHIFT_FLAG                        00000029
+SHIFT_INDEX_L                     00000018
+SHIFT_INDEX_R                     0000001F
+SHIFT_MODE                        00000017
+SHIFT_RELEASED                    0000002A
+SKIP_THIS_COL                     000000F9
+SMP                               00000007
+SPBRG                             00000099
+SPEN                              00000007
+SREN                              00000005
+SSPADD                            00000093
+SSPBUF                            00000013
+SSPCON                            00000014
+SSPCON2                           00000091
+SSPEN                             00000005
+SSPIE                             00000003
+SSPIF                             00000003
+SSPM0                             00000000
+SSPM1                             00000001
+SSPM2                             00000002
+SSPM3                             00000003
+SSPOV                             00000006
+SSPSTAT                           00000094
+STATUS                            00000003
+STATUS_TEMP                       00000021
+SYNC                              00000004
+T0CS                              00000005
+T0IE                              00000005
+T0IF                              00000002
+T0SE                              00000004
+T1CKPS0                           00000004
+T1CKPS1                           00000005
+T1CON                             00000010
+T1INSYNC                          00000002
+T1OSCEN                           00000003
+T1SYNC                            00000002
+T2CKPS0                           00000000
+T2CKPS1                           00000001
+T2CON                             00000012
+TEMP_VAR                          0000002F
+TMR0                              00000001
+TMR0IE                            00000005
+TMR0IF                            00000002
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 32
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+TMR1                              0000000E
+TMR1CS                            00000001
+TMR1H                             0000000F
+TMR1IE                            00000000
+TMR1IF                            00000000
+TMR1L                             0000000E
+TMR1ON                            00000000
+TMR2                              00000011
+TMR2IE                            00000001
+TMR2IF                            00000001
+TMR2ON                            00000002
+TOUTPS0                           00000003
+TOUTPS1                           00000004
+TOUTPS2                           00000005
+TOUTPS3                           00000006
+TRISA                             00000085
+TRISA0                            00000000
+TRISA1                            00000001
+TRISA2                            00000002
+TRISA3                            00000003
+TRISA4                            00000004
+TRISA5                            00000005
+TRISB                             00000086
+TRISB0                            00000000
+TRISB1                            00000001
+TRISB2                            00000002
+TRISB3                            00000003
+TRISB4                            00000004
+TRISB5                            00000005
+TRISB6                            00000006
+TRISB7                            00000007
+TRISC                             00000087
+TRISC0                            00000000
+TRISC1                            00000001
+TRISC2                            00000002
+TRISC3                            00000003
+TRISC4                            00000004
+TRISC5                            00000005
+TRISC6                            00000006
+TRISC7                            00000007
+TRISD                             00000088
+TRISD0                            00000000
+TRISD1                            00000001
+TRISD2                            00000002
+TRISD3                            00000003
+TRISD4                            00000004
+TRISD5                            00000005
+TRISD6                            00000006
+TRISD7                            00000007
+TRISE                             00000089
+TRISE0                            00000000
+TRISE1                            00000001
+TRISE2                            00000002
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 33
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+TRMT                              00000001
+TX8_9                             00000006
+TX9                               00000006
+TX9D                              00000000
+TXD8                              00000000
+TXEN                              00000005
+TXIE                              00000004
+TXIF                              00000004
+TXREG                             00000019
+TXSTA                             00000098
+UA                                00000001
+UART_TRANSMIT                     00000165
+UART_WAIT                         00000166
+USE_DEFAULT_FONT                  00000175
+W                                 00000000
+WCOL                              00000007
+WR                                00000001
+WREN                              00000002
+WRERR                             00000003
+W_TEMP                            00000020
+Z                                 00000002
+_BODEN_OFF                        00003FBF
+_BODEN_ON                         00003FFF
+_BOREN_OFF                        00003FBF
+_BOREN_ON                         00003FFF
+_CONFIG                           00002007
+_CPD_OFF                          00003FFF
+_CPD_ON                           00003EFF
+_CP_ALL                           00001FFF
+_CP_OFF                           00003FFF
+_CP_ON                            00001FFF
+_DEBUG_OFF                        00003FFF
+_DEBUG_ON                         000037FF
+_DEVID1                           00002006
+_FOSC_EXTRC                       00003FFF
+_FOSC_HS                          00003FFE
+_FOSC_LP                          00003FFC
+_FOSC_XT                          00003FFD
+_HS_OSC                           00003FFE
+_IDLOC0                           00002000
+_IDLOC1                           00002001
+_IDLOC2                           00002002
+_IDLOC3                           00002003
+_LP_OSC                           00003FFC
+_LVP_OFF                          00003F7F
+_LVP_ON                           00003FFF
+_PWRTE_OFF                        00003FFF
+_PWRTE_ON                         00003FF7
+_RC_OSC                           00003FFF
+_WDTE_OFF                         00003FFB
+_WDTE_ON                          00003FFF
+_WDT_OFF                          00003FFB
+_WDT_ON                           00003FFF
+MPASM  5.51                        KEYPAD.ASM   12-6-2025  17:32:33         PAGE 34
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+_WRT_1FOURTH                      00003BFF
+_WRT_256                          00003DFF
+_WRT_HALF                         000039FF
+_WRT_OFF                          00003FFF
+_XT_OSC                           00003FFD
+__16F877A                         00000001
+__DEBUG                           1
+
+Errors   :     0
+Warnings :     0 reported,     0 suppressed
+Messages :     9 reported,     0 suppressed
+
+

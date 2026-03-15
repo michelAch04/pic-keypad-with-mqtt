@@ -1,0 +1,54 @@
+'==============================================================================
+' Layout.bal - B4A Designer Layout Description
+' Create this layout in B4A Designer with the following elements:
+'==============================================================================
+
+' LAYOUT CONFIGURATION:
+' Open B4A Designer and create layout named "Layout"
+
+' ============ UI ELEMENTS TO ADD ============
+
+' 1. Label1 (Status Label)
+'    - Name: Label1
+'    - Left: 10dip, Top: 10dip
+'    - Width: 300dip, Height: 50dip
+'    - Text: "Connecting..."
+'    - TextSize: 16
+'    - Color: Colors.White
+'    - Background: Colors.DarkGray
+
+' 2. LabelChar (Character Display)
+'    - Name: LabelChar  
+'    - Left: 10dip, Top: 80dip
+'    - Width: 300dip, Height: 80dip
+'    - Text: "Char: --"
+'    - TextSize: 40
+'    - Gravity: CENTER
+'    - Background: Colors.LightGray
+
+' 3. LabelASCII (ASCII Value Display)
+'    - Name: LabelASCII
+'    - Left: 10dip, Top: 180dip
+'    - Width: 300dip, Height: 50dip
+'    - Text: "ASCII: --"
+'    - TextSize: 24
+'    - Gravity: CENTER
+'    - Background: Colors.White
+
+' 4. LabelHistory (History Display)
+'    - Name: LabelHistory
+'    - Left: 10dip, Top: 250dip
+'    - Width: 300dip, Height: 50dip
+'    - Text: "History: "
+'    - TextSize: 18
+'    - Gravity: CENTER_HORIZONTAL
+
+' ============ GENERATE MEMBERS ============
+' After placing elements:
+' Tools -> Generate Members
+' Check: Label1, LabelASCII, LabelChar, LabelHistory
+' Click "Generate Members"
+
+' ============ REQUIRED LIBRARY ============
+' Enable jMQTT library:
+' Windows -> Libraries Manager -> Check "jMQTT"

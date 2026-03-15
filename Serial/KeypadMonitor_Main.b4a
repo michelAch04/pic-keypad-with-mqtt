@@ -1,0 +1,150 @@
+'==============================================================================
+' KeypadMonitor - B4A Application for Keypad Display System
+' GEL575 Microcontroller Lab - LAB7
+'==============================================================================
+
+#Region Project Attributes
+    #ApplicationLabel: Keypad Monitor
+    #VersionCode: 1
+    #VersionName: 1.0
+    #SupportedOrientations: portrait
+    #CanInstallToExternalStorage: False
+#End Region
+
+#Region Activity Attributes
+    #FullScreen: False
+    #IncludeTitle: True
+#End Region
+
+Sub Process_Globals
+    ' MQTT Client
+    Private mqtt1 As MqttClient
+    
+    ' MQTT Configuration
+    Private serverURI As String = "tcp://broker.emqx.io:1883"
+    Private mqttTopic As String = "lab_micro_usek"
+    
+    ' History list for last 5 characters
+    Private charHistory As List
+End Sub
+
+Sub Globals
+    ' UI Elements
+    Private Label1 As Label          ' Status/received data display
+    Private LabelASCII As Label      ' ASCII value display
+    Private LabelChar As Label       ' Character display
+    Private LabelHistory As Label    ' History display
+    
+    ' Received data
+    Private receivedChar As String
+    Private receivedASCII As Int
+End Sub
+
+Sub Activity_Create(FirstTime As Boolean)
+    If FirstTime Then
+        ' Initialize history list
+        charHistory.Initialize
+        
+        ' Initialize MQTT client
+        mqtt1.Initialize("mqtt1", serverURI, Rnd(0, 999999) & "_keypad")
+        
+        ' MQTT connection options
+        Dim mo As MqttConnectOptions
+        mo.Initialize("emqx", "public")
+        mqtt1.Connect2(mo)
+    End If
+    
+    ' Load layout
+    Activity.LoadLayout("Layout")
+    
+    ' Initialize displays
+    Label1.Text = "Connecting..."
+    LabelASCII.Text = "ASCII: --"
+    LabelChar.Text = "Char: --"
+    LabelHistory.Text = "History: "
+End Sub
+
+'------------------------------------------------------------------------------
+' MQTT Event Handlers
+'------------------------------------------------------------------------------
+Sub mqtt1_Connected(Success As Boolean)
+    If Success = False Then
+        Log(LastException)
+        Label1.Text = "Connection Error"
+        Label1.Color = Colors.Red
+    Else
+        Label1.Text = "Connected"
+        Label1.Color = Colors.Green
+        
+        ' Subscribe to topic
+        mqtt1.Subscribe(mqttTopic, 0)
+    End If
+End Sub
+
+Sub mqtt1_MessageArrived(Topic As String, Payload() As Byte)
+    ' Convert payload to string
+    Dim message As String = BytesToString(Payload, 0, Payload.Length, "utf8")
+    
+    ' Parse message (format: "C:65" where C is char, 65 is ASCII)
+    If message.Contains(":") Then
+        Dim parts() As String = Regex.Split(":", message)
+        If parts.Length >= 2 Then
+            receivedChar = parts(0)
+            receivedASCII = parts(1)
+            
+            ' Update displays
+            LabelChar.Text = "Char: " & receivedChar
+            LabelASCII.Text = "ASCII: " & receivedASCII
+            Label1.Text = "Received: " & message
+            
+            ' Add to history
+            AddToHistory(receivedChar)
+        End If
+    Else
+        ' Simple message (status, etc.)
+        Label1.Text = message
+    End If
+End Sub
+
+Sub mqtt1_Disconnected
+    Label1.Text = "Disconnected"
+    Label1.Color = Colors.Orange
+    
+    ' Try to reconnect
+    Try
+        Dim mo As MqttConnectOptions
+        mo.Initialize("emqx", "public")
+        mqtt1.Connect2(mo)
+    Catch
+        Log("Reconnection failed")
+    End Try
+End Sub
+
+'------------------------------------------------------------------------------
+' Helper Functions
+'------------------------------------------------------------------------------
+Sub AddToHistory(char As String)
+    ' Add new character to beginning
+    charHistory.InsertAt(0, char)
+    
+    ' Keep only last 5
+    Do While charHistory.Size > 5
+        charHistory.RemoveAt(charHistory.Size - 1)
+    Loop
+    
+    ' Update history display
+    Dim histStr As String = "History: "
+    For i = 0 To charHistory.Size - 1
+        histStr = histStr & charHistory.Get(i) & " "
+    Next
+    LabelHistory.Text = histStr
+End Sub
+
+'------------------------------------------------------------------------------
+' Activity Lifecycle
+'------------------------------------------------------------------------------
+Sub Activity_Resume
+End Sub
+
+Sub Activity_Pause(UserClosed As Boolean)
+End Sub

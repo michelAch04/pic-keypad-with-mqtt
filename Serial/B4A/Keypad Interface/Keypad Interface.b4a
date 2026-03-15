@@ -1,0 +1,431 @@
+﻿Build1=Default,b4a.example
+Group=Default Group
+Library1=core
+Library2=jmqtt
+ManifestCode='This code will be applied to the manifest file during compilation.~\n~'You do not need to modify it in most cases.~\n~'See this link for for more information: https://www.b4x.com/forum/showthread.php?p=78136~\n~AddManifestText(~\n~<uses-sdk android:minSdkVersion="14" android:targetSdkVersion="30"/>~\n~<supports-screens android:largeScreens="true" ~\n~    android:normalScreens="true" ~\n~    android:smallScreens="true" ~\n~    android:anyDensity="true"/>)~\n~~\n~SetApplicationAttribute(android:icon, "@drawable/icon")~\n~SetApplicationAttribute(android:label, "$LABEL$")~\n~CreateResourceFromFile(Macro, Themes.LightTheme)~\n~~\n~'Required permission for MQTT~\n~AddPermission(android.permission.INTERNET)~\n~AddPermission(android.permission.ACCESS_NETWORK_STATE)~\n~
+Module1=Starter
+NumberOfFiles=0
+NumberOfLibraries=2
+NumberOfModules=1
+Version=11.5
+@EndOfDesignText@
+#Region  Project Attributes 
+    #ApplicationLabel: MQTT LED Matrix Display
+    #VersionCode: 1
+    #VersionName: 
+    'SupportedOrientations possible values: unspecified, landscape or portrait.
+    #SupportedOrientations: portrait
+    #CanInstallToExternalStorage: False
+#End Region
+
+#Region  Activity Attributes 
+    #FullScreen: False
+    #IncludeTitle: True
+#End Region
+
+'Activity module
+Sub Process_Globals
+	'MQTT Client
+	Private mqtt As MqttClient
+    
+	'MQTT Configuration
+	Private BROKER_URL As String = "tcp://broker.emqx.io:1883"
+	Private CLIENT_ID As String = "Android_Keypad_Display"
+	Private TOPIC_ASCII As String = "lab_micro_usek/ascii"
+    
+	'REMOVED: Character history list
+End Sub
+
+Sub Globals
+	'UI Components (created programmatically)
+	Private lblConnectionStatus As Label
+	Private txtCharacters As EditText  'CHANGED: From Label to EditText for text accumulation
+	Private btnClear As Button  'NEW: Clear button
+	Private pnlMatrix As Panel
+    
+	'Matrix display
+	Private matrixCells(5, 7) As Panel  'Column, Row
+	Private CELL_SIZE As Int
+	Private CELL_MARGIN As Int = 2
+    
+	'Current character data
+	Private currentASCII As Int = 97  'Default 'a'
+End Sub
+
+Sub Activity_Create(FirstTime As Boolean)
+	'REMOVED: History list initialization
+    
+	'Create UI programmatically
+	CreateUI
+    
+	'Setup MQTT connection
+	SetupMQTT
+    
+	'Display default character
+	UpdateDisplay(currentASCII)
+End Sub
+
+Sub Activity_Resume
+	'Reconnect MQTT if needed
+	If mqtt.Connected = False Then
+		ConnectMQTT
+	End If
+End Sub
+
+Sub Activity_Pause (UserClosed As Boolean)
+	'Disconnect MQTT when app is paused
+	If UserClosed Then
+		If mqtt.Connected Then
+			mqtt.Close
+		End If
+	End If
+End Sub
+
+'============================================================================
+' UI CREATION (PROGRAMMATIC)
+'============================================================================
+
+Sub CreateUI
+	'Set activity background color
+	Activity.Color = Colors.RGB(240, 240, 240)
+    
+	'Calculate dimensions
+	Dim screenWidth As Int = 100%x
+	Dim screenHeight As Int = 100%y
+    
+	'------------------------------------------------------------------------
+	' Connection Status (Top - Full Width)
+	'------------------------------------------------------------------------
+	lblConnectionStatus.Initialize("lblConnectionStatus")
+	lblConnectionStatus.Text = "Disconnected"
+	lblConnectionStatus.TextSize = 14
+	lblConnectionStatus.TextColor = Colors.White
+	lblConnectionStatus.Color = Colors.Red
+	lblConnectionStatus.Gravity = Gravity.CENTER
+	Activity.AddView(lblConnectionStatus, 0, 0, screenWidth, 40dip)
+    
+	'REMOVED: History ListView
+    
+	'REMOVED: ASCII Code Display
+    
+	'------------------------------------------------------------------------
+	' Text Field Display (Top - Full Width) - MODIFIED
+	'------------------------------------------------------------------------
+	txtCharacters.Initialize("txtCharacters")
+	txtCharacters.Text = ""
+	txtCharacters.TextSize = 20
+	txtCharacters.TextColor = Colors.Black
+	txtCharacters.Gravity = Gravity.LEFT + Gravity.CENTER_VERTICAL
+	txtCharacters.Hint = "Characters will appear here..."
+	txtCharacters.InputType = txtCharacters.INPUT_TYPE_NONE  'Read-only
+	Activity.AddView(txtCharacters, 10dip, 50dip, screenWidth - 20dip, 60dip)
+    
+	'------------------------------------------------------------------------
+	' Clear Button (Below Text Field) - NEW
+	'------------------------------------------------------------------------
+	btnClear.Initialize("btnClear")
+	btnClear.Text = "CLEAR"
+	btnClear.TextSize = 16
+	btnClear.Color = Colors.RGB(220, 53, 69)  'Red button
+	btnClear.TextColor = Colors.White
+	Activity.AddView(btnClear, 10dip, 120dip, screenWidth - 20dip, 50dip)
+    
+	'------------------------------------------------------------------------
+	' 5x7 LED Matrix Display (Center)
+	'------------------------------------------------------------------------
+	pnlMatrix.Initialize("pnlMatrix")
+	pnlMatrix.Color = Colors.RGB(50, 50, 50)  'Dark gray background
+    
+	'Calculate matrix dimensions and position
+	Dim matrixStartY As Int = 180dip
+	Dim matrixWidth As Int = Min(screenWidth - 40dip, 400dip)
+	Dim matrixHeight As Int = matrixWidth * 7 / 5  'Maintain 5:7 aspect ratio
+    
+	CELL_SIZE = (matrixWidth - (6 * CELL_MARGIN)) / 5
+    
+	'Center the matrix horizontally
+	Dim matrixX As Int = (screenWidth - matrixWidth) / 2
+	Activity.AddView(pnlMatrix, matrixX, matrixStartY, matrixWidth, matrixHeight)
+    
+	'Create 5x7 grid of cells
+	For col = 0 To 4
+		For row = 0 To 6
+			Dim cell As Panel
+			cell.Initialize("")
+			cell.Color = Colors.Black  'LED OFF
+            
+			Dim cellX As Int = col * (CELL_SIZE + CELL_MARGIN) + CELL_MARGIN
+			Dim cellY As Int = row * (CELL_SIZE + CELL_MARGIN) + CELL_MARGIN
+            
+			pnlMatrix.AddView(cell, cellX, cellY, CELL_SIZE, CELL_SIZE)
+			matrixCells(col, row) = cell
+		Next
+	Next
+End Sub
+
+'============================================================================
+' BUTTON CLICK HANDLERS - NEW
+'============================================================================
+
+Sub btnClear_Click
+	'Clear the text field
+	txtCharacters.Text = ""
+    
+	'Clear the matrix (turn off all LEDs)
+	For col = 0 To 4
+		For row = 0 To 6
+			matrixCells(col, row).Color = Colors.Black
+		Next
+	Next
+    
+	Log("Display cleared")
+End Sub
+
+'============================================================================
+' MQTT SETUP AND CONNECTION
+'============================================================================
+
+Sub SetupMQTT
+	'Initialize MQTT client
+	mqtt.Initialize("mqtt", BROKER_URL, CLIENT_ID)
+    
+	'Connect
+	ConnectMQTT
+End Sub
+
+Sub ConnectMQTT
+	Try
+		lblConnectionStatus.Text = "Connecting to MQTT..."
+		lblConnectionStatus.Color = Colors.RGB(255, 165, 0)  'Orange
+        
+		mqtt.Connect
+        
+	Catch
+		Log("MQTT Connection Error: " & LastException)
+		lblConnectionStatus.Text = "Connection Failed"
+		lblConnectionStatus.Color = Colors.Red
+	End Try
+End Sub
+
+'============================================================================
+' MQTT EVENT HANDLERS
+'============================================================================
+
+Sub mqtt_Connected (Success As Boolean)
+	If Success Then
+		Log("MQTT Connected Successfully")
+		lblConnectionStatus.Text = "Connected to " & BROKER_URL
+		lblConnectionStatus.Color = Colors.Green
+        
+		'Subscribe to ASCII topic
+		mqtt.Subscribe(TOPIC_ASCII, 0)  'QoS 0
+		Log("Subscribed to topic: " & TOPIC_ASCII)
+	Else
+		Log("MQTT Connection Failed")
+		lblConnectionStatus.Text = "Connection Failed"
+		lblConnectionStatus.Color = Colors.Red
+	End If
+End Sub
+
+Sub mqtt_MessageArrived (Topic As String, Payload() As Byte)
+	'Convert payload to string
+	Dim payloadStr As String = BytesToString(Payload, 0, Payload.Length, "UTF8")
+    
+	Log("Message received on topic: " & Topic)
+	Log("Payload: " & payloadStr)
+    
+	'Parse ASCII code
+	Dim asciiCode As Int = payloadStr
+    
+	'Validate ASCII code (42-122 based on PIC lookup table)
+	If asciiCode >= 42 AND asciiCode <= 122 Then
+		'Update display
+		UpdateDisplay(asciiCode)
+        
+		'REMOVED: Add to history
+	Else
+		Log("Invalid ASCII code received: " & asciiCode)
+	End If
+End Sub
+
+Sub mqtt_Disconnected
+	Log("MQTT Disconnected")
+	lblConnectionStatus.Text = "Disconnected"
+	lblConnectionStatus.Color = Colors.Red
+End Sub
+
+'============================================================================
+' DISPLAY UPDATE FUNCTIONS - MODIFIED
+'============================================================================
+
+Sub UpdateDisplay(asciiCode As Int)
+	'Update current ASCII
+	currentASCII = asciiCode
+    
+	'REMOVED: Update ASCII code label
+    
+	'CHANGED: Concatenate character to text field instead of replacing
+	Dim charValue As String = Chr(asciiCode)
+	txtCharacters.Text = txtCharacters.Text & charValue
+    
+	'Update LED matrix
+	UpdateMatrix(asciiCode)
+End Sub
+
+Sub UpdateMatrix(asciiCode As Int)
+	'Get 5x7 font data for this character
+	Dim fontData() As Byte = GetFontData(asciiCode)
+    
+	'Update each column
+	For col = 0 To 4
+		Dim columnByte As Byte = fontData(col)
+        
+		'Update each row in this column
+		For row = 0 To 6
+			'Check if bit is set (LED should be ON)
+			Dim bitValue As Int = Bit.And(columnByte, Power(2, row))
+            
+			If bitValue <> 0 Then
+				'LED ON - Green
+				matrixCells(col, row).Color = Colors.RGB(0, 255, 0)
+			Else
+				'LED OFF - Black
+				matrixCells(col, row).Color = Colors.Black
+			End If
+		Next
+	Next
+End Sub
+
+'REMOVED: AddToHistory function
+
+'============================================================================
+' 5x7 FONT LOOKUP TABLE
+'============================================================================
+' NOTE: Keep the entire GetFontData function exactly as it is in the original code
+' (All the Case statements from 42 to 122 with font data)
+
+Sub GetFontData(asciiCode As Int) As Byte()
+	'Font data for 5x7 LED matrix (5 columns x 7 rows per character)
+	'Each byte represents one column (bits 0-6 = rows 0-6)
+	Dim fontData() As Byte
+    
+	Select asciiCode
+		Case 42  '*
+			fontData = Array As Byte(0x14, 0x08, 0x3E, 0x08, 0x14)
+		Case 43  '+
+			fontData = Array As Byte(0x08, 0x08, 0x3E, 0x08, 0x08)
+		Case 45  '-
+			fontData = Array As Byte(0x08, 0x08, 0x08, 0x08, 0x08)
+		Case 47  '/
+			fontData = Array As Byte(0x20, 0x10, 0x08, 0x04, 0x02)
+		Case 65  'A
+			fontData = Array As Byte(0x7C, 0x12, 0x11, 0x12, 0x7C)
+		Case 66  'B
+			fontData = Array As Byte(0x7F, 0x49, 0x49, 0x49, 0x36)
+		Case 67  'C
+			fontData = Array As Byte(0x3E, 0x41, 0x41, 0x41, 0x22)
+		Case 68  'D
+			fontData = Array As Byte(0x7F, 0x41, 0x41, 0x22, 0x1C)
+		Case 69  'E
+			fontData = Array As Byte(0x7F, 0x49, 0x49, 0x49, 0x41)
+		Case 70  'F
+			fontData = Array As Byte(0x7F, 0x09, 0x09, 0x09, 0x01)
+		Case 71  'G
+			fontData = Array As Byte(0x3E, 0x41, 0x49, 0x49, 0x7A)
+		Case 72  'H
+			fontData = Array As Byte(0x7F, 0x08, 0x08, 0x08, 0x7F)
+		Case 73  'I
+			fontData = Array As Byte(0x00, 0x41, 0x7F, 0x41, 0x00)
+		Case 74  'J
+			fontData = Array As Byte(0x20, 0x40, 0x41, 0x3F, 0x01)
+		Case 75  'K
+			fontData = Array As Byte(0x7F, 0x08, 0x14, 0x22, 0x41)
+		Case 76  'L
+			fontData = Array As Byte(0x7F, 0x40, 0x40, 0x40, 0x40)
+		Case 77  'M
+			fontData = Array As Byte(0x7F, 0x02, 0x0C, 0x02, 0x7F)
+		Case 78  'N
+			fontData = Array As Byte(0x7F, 0x04, 0x08, 0x10, 0x7F)
+		Case 79  'O
+			fontData = Array As Byte(0x3E, 0x41, 0x41, 0x41, 0x3E)
+		Case 80  'P
+			fontData = Array As Byte(0x7F, 0x09, 0x09, 0x09, 0x06)
+		Case 81  'Q
+			fontData = Array As Byte(0x3E, 0x41, 0x51, 0x21, 0x5E)
+		Case 82  'R
+			fontData = Array As Byte(0x7F, 0x09, 0x19, 0x29, 0x46)
+		Case 83  'S
+			fontData = Array As Byte(0x46, 0x49, 0x49, 0x49, 0x31)
+		Case 84  'T
+			fontData = Array As Byte(0x01, 0x01, 0x7F, 0x01, 0x01)
+		Case 85  'U
+			fontData = Array As Byte(0x3F, 0x40, 0x40, 0x40, 0x3F)
+		Case 86  'V
+			fontData = Array As Byte(0x1F, 0x20, 0x40, 0x20, 0x1F)
+		Case 87  'W
+			fontData = Array As Byte(0x3F, 0x40, 0x38, 0x40, 0x3F)
+		Case 88  'X
+			fontData = Array As Byte(0x63, 0x14, 0x08, 0x14, 0x63)
+		Case 89  'Y
+			fontData = Array As Byte(0x07, 0x08, 0x70, 0x08, 0x07)
+		Case 90  'Z
+			fontData = Array As Byte(0x61, 0x51, 0x49, 0x45, 0x43)
+		Case 97  'a
+			fontData = Array As Byte(0x20, 0x54, 0x54, 0x54, 0x78)
+		Case 98  'b
+			fontData = Array As Byte(0x7F, 0x48, 0x44, 0x44, 0x38)
+		Case 99  'c
+			fontData = Array As Byte(0x38, 0x44, 0x44, 0x44, 0x20)
+		Case 100  'd
+			fontData = Array As Byte(0x38, 0x44, 0x44, 0x48, 0x7F)
+		Case 101  'e
+			fontData = Array As Byte(0x38, 0x54, 0x54, 0x54, 0x18)
+		Case 102  'f
+			fontData = Array As Byte(0x08, 0x7E, 0x09, 0x01, 0x02)
+		Case 103  'g
+			fontData = Array As Byte(0x0C, 0x52, 0x52, 0x52, 0x3E)
+		Case 104  'h
+			fontData = Array As Byte(0x7F, 0x08, 0x04, 0x04, 0x78)
+		Case 105  'i
+			fontData = Array As Byte(0x00, 0x44, 0x7D, 0x40, 0x00)
+		Case 106  'j
+			fontData = Array As Byte(0x20, 0x40, 0x44, 0x3D, 0x00)
+		Case 107  'k
+			fontData = Array As Byte(0x7F, 0x10, 0x28, 0x44, 0x00)
+		Case 108  'l
+			fontData = Array As Byte(0x00, 0x41, 0x7F, 0x40, 0x00)
+		Case 109  'm
+			fontData = Array As Byte(0x7C, 0x04, 0x18, 0x04, 0x78)
+		Case 110  'n
+			fontData = Array As Byte(0x7C, 0x08, 0x04, 0x04, 0x78)
+		Case 111  'o
+			fontData = Array As Byte(0x38, 0x44, 0x44, 0x44, 0x38)
+		Case 112  'p
+			fontData = Array As Byte(0x7C, 0x14, 0x14, 0x14, 0x08)
+		Case 113  'q
+			fontData = Array As Byte(0x08, 0x14, 0x14, 0x18, 0x7C)
+		Case 114  'r
+			fontData = Array As Byte(0x7C, 0x08, 0x04, 0x04, 0x08)
+		Case 115  's
+			fontData = Array As Byte(0x48, 0x54, 0x54, 0x54, 0x20)
+		Case 116  't
+			fontData = Array As Byte(0x04, 0x3F, 0x44, 0x40, 0x20)
+		Case 117  'u
+			fontData = Array As Byte(0x3C, 0x40, 0x40, 0x20, 0x7C)
+		Case 118  'v
+			fontData = Array As Byte(0x1C, 0x20, 0x40, 0x20, 0x1C)
+		Case 119  'w
+			fontData = Array As Byte(0x3C, 0x40, 0x30, 0x40, 0x3C)
+		Case 120  'x
+			fontData = Array As Byte(0x44, 0x28, 0x10, 0x28, 0x44)
+		Case 121  'y
+			fontData = Array As Byte(0x0C, 0x50, 0x50, 0x50, 0x3C)
+		Case 122  'z
+			fontData = Array As Byte(0x44, 0x64, 0x54, 0x4C, 0x44)
+		Case Else
+			'Default pattern (blank)
+			fontData = Array As Byte(0x00, 0x00, 0x00, 0x00, 0x00)
+	End Select
+    
+	Return fontData
+End Sub

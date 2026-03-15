@@ -1,0 +1,22 @@
+--release
+--output
+C:\Users\Hp\OneDrive - Université Saint-Esprit de Kaslik\Desktop\JOE\1. UNI\25-26\1. Fall\GEL558\Final Proj\Environment\Project 2 - Keypad\Serial\B4A\Keypad Interface\Objects
+--lib
+C:\Android\platforms\android-36\android.jar
+C:\Android\tools\..\extras\b4a_local\unpacked-b4ashared-63783454550000\dex_v1\b4ashared.zip
+C:\Android\tools\..\extras\b4a_local\unpacked-core-63783454550000\dex_v1\core.zip
+C:\Android\tools\..\extras\b4a_local\unpacked-jmqtt-63880304809000\dex_v1\jmqtt.zip
+C:\Android\tools\..\extras\b4a_local\unpacked-org.eclipse.paho.client.mqttv3-1.2.5-63880305010000\dex_v1\org.eclipse.paho.client.mqttv3-1.2.5.zip
+C:\Users\Hp\OneDrive - Université Saint-Esprit de Kaslik\Desktop\JOE\1. UNI\25-26\1. Fall\GEL558\Final Proj\Environment\Project 2 - Keypad\Serial\B4A\Keypad Interface\Objects\dexed\b4a\example\main$1.dex
+C:\Users\Hp\OneDrive - Université Saint-Esprit de Kaslik\Desktop\JOE\1. UNI\25-26\1. Fall\GEL558\Final Proj\Environment\Project 2 - Keypad\Serial\B4A\Keypad Interface\Objects\dexed\b4a\example\main$B4AMenuItemsClickListener.dex
+C:\Users\Hp\OneDrive - Université Saint-Esprit de Kaslik\Desktop\JOE\1. UNI\25-26\1. Fall\GEL558\Final Proj\Environment\Project 2 - Keypad\Serial\B4A\Keypad Interface\Objects\dexed\b4a\example\main$HandleKeyDelayed.dex
+C:\Users\Hp\OneDrive - Université Saint-Esprit de Kaslik\Desktop\JOE\1. UNI\25-26\1. Fall\GEL558\Final Proj\Environment\Project 2 - Keypad\Serial\B4A\Keypad Interface\Objects\dexed\b4a\example\main$ResumeMessage.dex
+C:\Users\Hp\OneDrive - Université Saint-Esprit de Kaslik\Desktop\JOE\1. UNI\25-26\1. Fall\GEL558\Final Proj\Environment\Project 2 - Keypad\Serial\B4A\Keypad Interface\Objects\dexed\b4a\example\main$WaitForLayout.dex
+C:\Users\Hp\OneDrive - Université Saint-Esprit de Kaslik\Desktop\JOE\1. UNI\25-26\1. Fall\GEL558\Final Proj\Environment\Project 2 - Keypad\Serial\B4A\Keypad Interface\Objects\dexed\b4a\example\main.dex
+C:\Users\Hp\OneDrive - Université Saint-Esprit de Kaslik\Desktop\JOE\1. UNI\25-26\1. Fall\GEL558\Final Proj\Environment\Project 2 - Keypad\Serial\B4A\Keypad Interface\Objects\dexed\b4a\example\R$drawable.dex
+C:\Users\Hp\OneDrive - Université Saint-Esprit de Kaslik\Desktop\JOE\1. UNI\25-26\1. Fall\GEL558\Final Proj\Environment\Project 2 - Keypad\Serial\B4A\Keypad Interface\Objects\dexed\b4a\example\R$style.dex
+C:\Users\Hp\OneDrive - Université Saint-Esprit de Kaslik\Desktop\JOE\1. UNI\25-26\1. Fall\GEL558\Final Proj\Environment\Project 2 - Keypad\Serial\B4A\Keypad Interface\Objects\dexed\b4a\example\R.dex
+C:\Users\Hp\OneDrive - Université Saint-Esprit de Kaslik\Desktop\JOE\1. UNI\25-26\1. Fall\GEL558\Final Proj\Environment\Project 2 - Keypad\Serial\B4A\Keypad Interface\Objects\dexed\b4a\example\starter$1.dex
+C:\Users\Hp\OneDrive - Université Saint-Esprit de Kaslik\Desktop\JOE\1. UNI\25-26\1. Fall\GEL558\Final Proj\Environment\Project 2 - Keypad\Serial\B4A\Keypad Interface\Objects\dexed\b4a\example\starter$2.dex
+C:\Users\Hp\OneDrive - Université Saint-Esprit de Kaslik\Desktop\JOE\1. UNI\25-26\1. Fall\GEL558\Final Proj\Environment\Project 2 - Keypad\Serial\B4A\Keypad Interface\Objects\dexed\b4a\example\starter$starter_BR.dex
+C:\Users\Hp\OneDrive - Université Saint-Esprit de Kaslik\Desktop\JOE\1. UNI\25-26\1. Fall\GEL558\Final Proj\Environment\Project 2 - Keypad\Serial\B4A\Keypad Interface\Objects\dexed\b4a\example\starter.dex

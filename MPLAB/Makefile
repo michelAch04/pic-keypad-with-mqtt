@@ -1,0 +1,19 @@
+# MPLAB IDE generated this makefile for use with GNU make.
+# Project: keypad.mcp
+# Date: Sat Dec 06 16:00:53 2025
+
+AS = MPASMWIN.exe
+CC = 
+LD = mplink.exe
+AR = mplib.exe
+RM = rm
+
+keypad.cof : keypad.o
+	$(CC) /p16F877A "keypad.o" /u_DEBUG /z__MPLAB_BUILD=1 /z__MPLAB_DEBUG=1 /o"keypad.cof" /M"keypad.map" /W
+
+keypad.o : keypad.asm ../../../../../../../../Program\ Files\ (x86)/Microchip/MPASM\ Suite/P16F877A.INC
+	$(AS) /q /p16F877A "keypad.asm" /l"keypad.lst" /e"keypad.err" /o"keypad.o" /d__DEBUG=1
+
+clean : 
+	$(CC) "keypad.o" "keypad.err" "keypad.lst" "keypad.cof" "keypad.hex"
+

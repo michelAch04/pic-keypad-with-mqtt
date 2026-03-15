@@ -1,0 +1,596 @@
+;==============================================================================
+; KEYPAD_DISPLAY.ASM - PIC16F877A Keypad Scanner with 5x7 LED Display
+; GEL575 Microcontroller Lab - LAB7
+;==============================================================================
+    LIST P=16F877A
+    #include <p16f877a.inc>
+    __CONFIG _FOSC_XT & _WDTE_OFF & _PWRTE_ON & _BOREN_OFF & _LVP_OFF & _CPD_OFF & _WRT_OFF & _CP_OFF
+
+;------------------------------------------------------------------------------
+; Variable Definitions
+;------------------------------------------------------------------------------
+    CBLOCK 0x20
+        W_TEMP          ; Context save for ISR
+        STATUS_TEMP
+        PCLATH_TEMP
+        COL_COUNT       ; Display column counter (0-4)
+        ROW_DATA        ; Current row data for display
+        KEY_COL         ; Keypad column counter
+        KEY_ROW         ; Keypad row value
+        KEY_CODE        ; Detected key code
+        ASCII_VAL       ; ASCII value to transmit
+        DELAY_CNT1      ; Delay counters
+        DELAY_CNT2
+        DELAY_CNT3
+        DEBOUNCE_CNT    ; Debounce counter
+        SHIFT_FLAG      ; Shift key status (0=off, 1=on)
+        DISPLAY_CHAR    ; Character to display (ASCII)
+        TEMP_REG        ; Temporary register
+    ENDC
+
+;------------------------------------------------------------------------------
+; Constants
+;------------------------------------------------------------------------------
+NUM_COLS    EQU     5       ; LED matrix columns
+NUM_ROWS    EQU     7       ; LED matrix rows
+KEY_COLS    EQU     8       ; Keypad columns (RD0-RD7)
+KEY_ROWS    EQU     4       ; Keypad rows (RB4-RB7)
+
+;------------------------------------------------------------------------------
+; Reset Vector
+;------------------------------------------------------------------------------
+    ORG     0x0000
+    GOTO    MAIN
+
+;------------------------------------------------------------------------------
+; Interrupt Vector
+;------------------------------------------------------------------------------
+    ORG     0x0004
+    GOTO    ISR
+
+;------------------------------------------------------------------------------
+; Character Pattern Lookup Tables (5x7 font)
+; Each character uses 5 bytes (columns), 7 bits each (rows)
+;------------------------------------------------------------------------------
+    ORG     0x0100
+CHAR_TABLE:
+    ; Get character pattern address - W contains ASCII code
+    MOVWF   TEMP_REG
+    MOVLW   'A'
+    SUBWF   TEMP_REG, W     ; W = ASCII - 'A'
+    BTFSS   STATUS, C       ; If result negative, use space
+    GOTO    GET_SPACE
+    MOVLW   26
+    SUBWF   TEMP_REG, W     ; Check if > 'Z'
+    BTFSC   STATUS, C
+    GOTO    GET_SPACE
+    
+    ; Calculate table offset (ASCII - 'A') * 5
+    MOVF    TEMP_REG, W
+    MOVWF   TEMP_REG
+    MOVLW   'A'
+    SUBWF   TEMP_REG, F     ; TEMP_REG = char offset
+    
+    ; Multiply by 5: offset * 5 = offset * 4 + offset
+    BCF     STATUS, C
+    RLF     TEMP_REG, W     ; W = offset * 2
+    RLF     TEMP_REG, F     ; TEMP_REG = offset * 4
+    ADDWF   TEMP_REG, W     ; W = offset * 5
+    
+    ADDLW   LOW PATTERNS_START
+    MOVWF   TEMP_REG
+    RETURN
+
+GET_SPACE:
+    MOVLW   LOW SPACE_PATTERN
+    MOVWF   TEMP_REG
+    RETURN
+
+    ORG     0x0200
+PATTERNS_START:
+; A (0x41)
+    DT      0x7E, 0x09, 0x09, 0x09, 0x7E  
+; B
+    DT      0x7F, 0x49, 0x49, 0x49, 0x36
+; C
+    DT      0x3E, 0x41, 0x41, 0x41, 0x22
+; D
+    DT      0x7F, 0x41, 0x41, 0x41, 0x3E
+; E
+    DT      0x7F, 0x49, 0x49, 0x49, 0x41
+; F
+    DT      0x7F, 0x09, 0x09, 0x09, 0x01
+; G
+    DT      0x3E, 0x41, 0x49, 0x49, 0x3A
+; H
+    DT      0x7F, 0x08, 0x08, 0x08, 0x7F
+; I
+    DT      0x00, 0x41, 0x7F, 0x41, 0x00
+; J
+    DT      0x20, 0x40, 0x40, 0x40, 0x3F
+; K
+    DT      0x7F, 0x08, 0x14, 0x22, 0x41
+; L
+    DT      0x7F, 0x40, 0x40, 0x40, 0x40
+; M
+    DT      0x7F, 0x02, 0x04, 0x02, 0x7F
+; N
+    DT      0x7F, 0x02, 0x04, 0x08, 0x7F
+; O
+    DT      0x3E, 0x41, 0x41, 0x41, 0x3E
+; P
+    DT      0x7F, 0x09, 0x09, 0x09, 0x06
+; Q
+    DT      0x3E, 0x41, 0x51, 0x21, 0x5E
+; R
+    DT      0x7F, 0x09, 0x19, 0x29, 0x46
+; S
+    DT      0x26, 0x49, 0x49, 0x49, 0x32
+; T
+    DT      0x01, 0x01, 0x7F, 0x01, 0x01
+; U
+    DT      0x3F, 0x40, 0x40, 0x40, 0x3F
+; V
+    DT      0x1F, 0x20, 0x40, 0x20, 0x1F
+; W
+    DT      0x3F, 0x40, 0x30, 0x40, 0x3F
+; X
+    DT      0x63, 0x14, 0x08, 0x14, 0x63
+; Y
+    DT      0x03, 0x04, 0x78, 0x04, 0x03
+; Z
+    DT      0x61, 0x51, 0x49, 0x45, 0x43
+
+SPACE_PATTERN:
+    DT      0x00, 0x00, 0x00, 0x00, 0x00
+
+;------------------------------------------------------------------------------
+; Keypad Lookup Table - Maps (row,col) to ASCII
+; Row 0 (RB4): Q W E R T Y U I
+; Row 1 (RB5): A S D F G H J K
+; Row 2 (RB6): Z X C V B N M L
+; Row 3 (RB7): SHIFT O P / * + - SHIFT
+;------------------------------------------------------------------------------
+    ORG     0x0300
+KEYPAD_TABLE:
+    ; Row 0 (index 0-7)
+    DT      'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I'
+    ; Row 1 (index 8-15)
+    DT      'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K'
+    ; Row 2 (index 16-23)
+    DT      'Z', 'X', 'C', 'V', 'B', 'N', 'M', 'L'
+    ; Row 3 (index 24-31)
+    DT      0x00, 'O', 'P', '/', '*', '+', '-', 0x00  ; 0x00 = SHIFT
+
+;------------------------------------------------------------------------------
+; Main Program
+;------------------------------------------------------------------------------
+MAIN:
+    CALL    INIT_PORTS
+    CALL    INIT_UART
+    CALL    INIT_INTERRUPTS
+    
+    ; Initialize variables
+    CLRF    COL_COUNT
+    CLRF    SHIFT_FLAG
+    MOVLW   'A'             ; Default display character
+    MOVWF   DISPLAY_CHAR
+    
+MAIN_LOOP:
+    ; Continuously refresh display
+    CALL    DISPLAY_COLUMN
+    CALL    DELAY_2MS
+    
+    ; Next column
+    INCF    COL_COUNT, F
+    MOVLW   NUM_COLS
+    SUBWF   COL_COUNT, W
+    BTFSC   STATUS, Z
+    CLRF    COL_COUNT
+    
+    GOTO    MAIN_LOOP
+
+;------------------------------------------------------------------------------
+; Port Initialization
+;------------------------------------------------------------------------------
+INIT_PORTS:
+    BSF     STATUS, RP0     ; Bank 1
+    
+    ; PORTA: RA0-RA4 outputs (LED columns), RA5 output (row 7)
+    MOVLW   0x00
+    MOVWF   TRISA
+    
+    ; PORTB: RB0-RB3 outputs, RB4-RB7 inputs (keypad rows)
+    MOVLW   0xF0
+    MOVWF   TRISB
+    
+    ; Enable weak pull-ups on PORTB
+    BCF     OPTION_REG, NOT_RBPU
+    
+    ; PORTC: RC0-RC5 outputs (LED rows), RC6 TX output, RC7 RX input
+    MOVLW   0x80
+    MOVWF   TRISC
+    
+    ; PORTD: RD0-RD7 outputs (keypad columns)
+    MOVLW   0x00
+    MOVWF   TRISD
+    
+    ; ADCON1: All digital I/O
+    MOVLW   0x06
+    MOVWF   ADCON1
+    
+    BCF     STATUS, RP0     ; Bank 0
+    
+    ; Clear all ports
+    CLRF    PORTA
+    CLRF    PORTB
+    CLRF    PORTC
+    CLRF    PORTD
+    
+    RETURN
+
+;------------------------------------------------------------------------------
+; UART Initialization (9600 baud @ 4MHz)
+;------------------------------------------------------------------------------
+INIT_UART:
+    BSF     STATUS, RP0     ; Bank 1
+    
+    ; SPBRG = 25 for 9600 baud with BRGH=1
+    MOVLW   D'25'
+    MOVWF   SPBRG
+    
+    ; TXSTA: Enable transmit, async mode, high speed
+    MOVLW   B'00100100'     ; TXEN=1, BRGH=1
+    MOVWF   TXSTA
+    
+    BCF     STATUS, RP0     ; Bank 0
+    
+    ; RCSTA: Enable serial port
+    MOVLW   B'10000000'     ; SPEN=1
+    MOVWF   RCSTA
+    
+    RETURN
+
+;------------------------------------------------------------------------------
+; Interrupt Initialization (PORTB change interrupt)
+;------------------------------------------------------------------------------
+INIT_INTERRUPTS:
+    ; Enable RB port change interrupt
+    BSF     STATUS, RP0     ; Bank 1
+    MOVLW   B'00001000'     ; RBIE=1
+    MOVWF   INTCON
+    BCF     STATUS, RP0     ; Bank 0
+    
+    ; Read PORTB to clear mismatch
+    MOVF    PORTB, W
+    
+    ; Clear RBIF and enable global interrupts
+    BCF     INTCON, RBIF
+    BSF     INTCON, GIE
+    
+    RETURN
+
+;------------------------------------------------------------------------------
+; Interrupt Service Routine
+;------------------------------------------------------------------------------
+ISR:
+    ; Save context
+    MOVWF   W_TEMP
+    SWAPF   STATUS, W
+    MOVWF   STATUS_TEMP
+    MOVF    PCLATH, W
+    MOVWF   PCLATH_TEMP
+    
+    ; Check if RBIF (port change interrupt)
+    BTFSS   INTCON, RBIF
+    GOTO    ISR_EXIT
+    
+    ; Debounce delay
+    CALL    DELAY_20MS
+    
+    ; Scan keypad
+    CALL    SCAN_KEYPAD
+    
+    ; Read PORTB to clear mismatch condition
+    MOVF    PORTB, W
+    
+    ; Clear interrupt flag
+    BCF     INTCON, RBIF
+    
+ISR_EXIT:
+    ; Restore context
+    MOVF    PCLATH_TEMP, W
+    MOVWF   PCLATH
+    SWAPF   STATUS_TEMP, W
+    MOVWF   STATUS
+    SWAPF   W_TEMP, F
+    SWAPF   W_TEMP, W
+    RETFIE
+
+;------------------------------------------------------------------------------
+; Keypad Scan Routine
+;------------------------------------------------------------------------------
+SCAN_KEYPAD:
+    CLRF    KEY_COL         ; Start with column 0
+    
+SCAN_NEXT_COL:
+    ; Output low on current column only
+    MOVLW   0xFF
+    MOVWF   PORTD
+    
+    ; Set current column low
+    MOVF    KEY_COL, W
+    CALL    GET_COL_MASK
+    XORLW   0xFF            ; Invert to make one bit low
+    MOVWF   PORTD
+    
+    NOP                     ; Settling time
+    NOP
+    
+    ; Read rows (RB4-RB7)
+    MOVF    PORTB, W
+    ANDLW   0xF0            ; Mask rows
+    XORLW   0xF0            ; Invert (pressed = 1)
+    MOVWF   KEY_ROW
+    
+    ; Check if any key pressed in this column
+    BTFSC   STATUS, Z
+    GOTO    SCAN_NO_KEY
+    
+    ; Find which row
+    BTFSC   KEY_ROW, 4
+    GOTO    ROW0_PRESSED
+    BTFSC   KEY_ROW, 5
+    GOTO    ROW1_PRESSED
+    BTFSC   KEY_ROW, 6
+    GOTO    ROW2_PRESSED
+    BTFSC   KEY_ROW, 7
+    GOTO    ROW3_PRESSED
+    GOTO    SCAN_NO_KEY
+
+ROW0_PRESSED:
+    MOVF    KEY_COL, W      ; Index = col + 0
+    GOTO    KEY_FOUND
+    
+ROW1_PRESSED:
+    MOVF    KEY_COL, W
+    ADDLW   8               ; Index = col + 8
+    GOTO    KEY_FOUND
+    
+ROW2_PRESSED:
+    MOVF    KEY_COL, W
+    ADDLW   16              ; Index = col + 16
+    GOTO    KEY_FOUND
+    
+ROW3_PRESSED:
+    MOVF    KEY_COL, W
+    ADDLW   24              ; Index = col + 24
+    GOTO    KEY_FOUND
+
+KEY_FOUND:
+    ; W contains table index
+    CALL    LOOKUP_KEY
+    MOVWF   KEY_CODE
+    
+    ; Check for SHIFT key (code = 0)
+    MOVF    KEY_CODE, F
+    BTFSC   STATUS, Z
+    GOTO    TOGGLE_SHIFT
+    
+    ; Valid key - update display and transmit
+    MOVF    KEY_CODE, W
+    MOVWF   DISPLAY_CHAR
+    MOVWF   ASCII_VAL
+    CALL    UART_TRANSMIT
+    
+    GOTO    SCAN_DONE
+
+TOGGLE_SHIFT:
+    ; Toggle shift flag
+    MOVLW   0x01
+    XORWF   SHIFT_FLAG, F
+    GOTO    SCAN_DONE
+
+SCAN_NO_KEY:
+    ; Try next column
+    INCF    KEY_COL, F
+    MOVLW   KEY_COLS
+    SUBWF   KEY_COL, W
+    BTFSS   STATUS, Z
+    GOTO    SCAN_NEXT_COL
+    
+SCAN_DONE:
+    ; Reset all columns high
+    MOVLW   0xFF
+    MOVWF   PORTD
+    RETURN
+
+;------------------------------------------------------------------------------
+; Get Column Mask (returns bit pattern for column number in W)
+;------------------------------------------------------------------------------
+GET_COL_MASK:
+    ANDLW   0x07
+    ADDWF   PCL, F
+    RETLW   B'00000001'     ; Column 0
+    RETLW   B'00000010'     ; Column 1
+    RETLW   B'00000100'     ; Column 2
+    RETLW   B'00001000'     ; Column 3
+    RETLW   B'00010000'     ; Column 4
+    RETLW   B'00100000'     ; Column 5
+    RETLW   B'01000000'     ; Column 6
+    RETLW   B'10000000'     ; Column 7
+
+;------------------------------------------------------------------------------
+; Keypad Lookup (W = index, returns ASCII in W)
+;------------------------------------------------------------------------------
+LOOKUP_KEY:
+    MOVWF   TEMP_REG
+    MOVLW   HIGH KEYPAD_TABLE
+    MOVWF   PCLATH
+    MOVF    TEMP_REG, W
+    ADDLW   LOW KEYPAD_TABLE
+    BTFSC   STATUS, C
+    INCF    PCLATH, F
+    MOVWF   PCL
+    ; Returns via DT table
+
+;------------------------------------------------------------------------------
+; Display Column Routine
+;------------------------------------------------------------------------------
+DISPLAY_COLUMN:
+    ; Turn off all columns first
+    BCF     PORTA, 0
+    BCF     PORTA, 1
+    BCF     PORTA, 2
+    BCF     PORTA, 3
+    BCF     PORTA, 4
+    
+    ; Get pattern for current character and column
+    MOVF    DISPLAY_CHAR, W
+    CALL    GET_PATTERN_ADDR
+    
+    ; Add column offset
+    MOVF    COL_COUNT, W
+    ADDWF   TEMP_REG, W
+    
+    ; Set PCLATH for table access
+    MOVLW   HIGH PATTERNS_START
+    MOVWF   PCLATH
+    MOVF    TEMP_REG, W
+    ADDLW   LOW PATTERNS_START
+    BTFSC   STATUS, C
+    INCF    PCLATH, F
+    MOVWF   PCL
+    ; Pattern byte returned in W via RETLW
+    
+DISPLAY_WITH_PATTERN:
+    ; W contains row pattern
+    MOVWF   ROW_DATA
+    
+    ; Output row data (bits 0-5 to RC0-RC5, bit 6 to RA5)
+    MOVF    ROW_DATA, W
+    ANDLW   0x3F            ; Lower 6 bits
+    MOVWF   PORTC
+    
+    BTFSC   ROW_DATA, 6     ; 7th row to RA5
+    BSF     PORTA, 5
+    BTFSS   ROW_DATA, 6
+    BCF     PORTA, 5
+    
+    ; Enable current column
+    MOVF    COL_COUNT, W
+    CALL    ENABLE_COLUMN
+    
+    RETURN
+
+;------------------------------------------------------------------------------
+; Get Pattern Address for character
+;------------------------------------------------------------------------------
+GET_PATTERN_ADDR:
+    ; W contains ASCII character
+    ; Calculate offset from 'A'
+    MOVWF   TEMP_REG
+    MOVLW   'A'
+    SUBWF   TEMP_REG, W
+    BTFSS   STATUS, C
+    GOTO    USE_SPACE       ; Char < 'A'
+    
+    MOVLW   26
+    SUBWF   TEMP_REG, W
+    MOVF    TEMP_REG, W
+    SUBLW   'A'
+    BTFSS   STATUS, C
+    GOTO    USE_SPACE       ; Char > 'Z'
+    
+    ; Valid A-Z character
+    MOVF    TEMP_REG, W
+    SUBLW   'A'             ; W = 'A' - ASCII (negative of offset)
+    SUBLW   0               ; W = ASCII - 'A'
+    
+    ; Multiply by 5
+    MOVWF   TEMP_REG
+    BCF     STATUS, C
+    RLF     TEMP_REG, F     ; *2
+    RLF     TEMP_REG, F     ; *4
+    ADDWF   TEMP_REG, F     ; *5
+    RETURN
+
+USE_SPACE:
+    MOVLW   (SPACE_PATTERN - PATTERNS_START)
+    MOVWF   TEMP_REG
+    RETURN
+
+;------------------------------------------------------------------------------
+; Enable Display Column
+;------------------------------------------------------------------------------
+ENABLE_COLUMN:
+    ANDLW   0x07
+    ADDWF   PCL, F
+    GOTO    EN_COL0
+    GOTO    EN_COL1
+    GOTO    EN_COL2
+    GOTO    EN_COL3
+    GOTO    EN_COL4
+    RETURN
+    RETURN
+    RETURN
+
+EN_COL0:
+    BSF     PORTA, 0
+    RETURN
+EN_COL1:
+    BSF     PORTA, 1
+    RETURN
+EN_COL2:
+    BSF     PORTA, 2
+    RETURN
+EN_COL3:
+    BSF     PORTA, 3
+    RETURN
+EN_COL4:
+    BSF     PORTA, 4
+    RETURN
+
+;------------------------------------------------------------------------------
+; UART Transmit (sends ASCII_VAL)
+;------------------------------------------------------------------------------
+UART_TRANSMIT:
+    BSF     STATUS, RP0     ; Bank 1
+UART_WAIT:
+    BTFSS   TXSTA, TRMT     ; Wait for TSR empty
+    GOTO    UART_WAIT
+    BCF     STATUS, RP0     ; Bank 0
+    
+    MOVF    ASCII_VAL, W
+    MOVWF   TXREG           ; Send character
+    RETURN
+
+;------------------------------------------------------------------------------
+; Delay Routines
+;------------------------------------------------------------------------------
+DELAY_2MS:
+    ; 2ms delay at 4MHz (2000 cycles)
+    MOVLW   D'4'
+    MOVWF   DELAY_CNT2
+DLY2_OUTER:
+    MOVLW   D'165'
+    MOVWF   DELAY_CNT1
+DLY2_INNER:
+    DECFSZ  DELAY_CNT1, F
+    GOTO    DLY2_INNER
+    DECFSZ  DELAY_CNT2, F
+    GOTO    DLY2_OUTER
+    RETURN
+
+DELAY_20MS:
+    ; 20ms delay for debouncing
+    MOVLW   D'40'
+    MOVWF   DELAY_CNT3
+DLY20_LOOP:
+    CALL    DELAY_2MS
+    DECFSZ  DELAY_CNT3, F
+    GOTO    DLY20_LOOP
+    RETURN
+
+;------------------------------------------------------------------------------
+    END
